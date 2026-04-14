@@ -1,72 +1,79 @@
 # jaq-wasm
 
-[![CI](https://github.com/mynkpdr/jaq-wasm/actions/workflows/ci.yml/badge.svg)](https://github.com/mynkpdr/jaq-wasm/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/jaq-wasm.svg)](https://www.npmjs.com/package/jaq-wasm)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-`jaq-wasm` is the WebAssembly build of `jaq`, the jq-like JSON processor.
-It is set up as a standalone repository with a Rust workspace, a publishable
-npm package under `pkg/`, and CI scaffolding for professional release flows.
+`jaq-wasm` is the WebAssembly build of `jaq`, a jq-like JSON processor written in Rust. It allows you to process JSON data using jq filters directly in the browser or Node.js.
 
-## What It Exposes
+## Installation
 
-The wasm crate provides two public JavaScript-facing entry points:
-
-- `run_jaq(filter, input)` returns CLI-style stdout bytes for the rendered results.
-- `run_jaq_values(filter, input)` returns a JSON envelope for JS-friendly inspection.
-
-The browser demo and test harness use the structured helper, while the raw export
-tracks the native CLI output path more closely.
+```bash
+npm install jaq-wasm
+```
 
 ## Usage
 
-You can use `jaq-wasm` in a browser or in Node.js. Since it is a WebAssembly module, it must be initialized before use.
+`jaq-wasm` provides two main functions:
+
+- `run_jaq(filter, input)`: Returns raw CLI-style output as bytes
+- `run_jaq_values(filter, input)`: Returns structured JSON results
 
 ### Browser (ESM)
 
 ```html
-<script type="module">
-  // Import the initialization function and the API
-  import init, { run_jaq, run_jaq_values } from "https://unpkg.com/jaq-wasm/jaq_wasm.js";
+<!DOCTYPE html>
+<html>
+<head>
+  <title>jaq-wasm Example</title>
+</head>
+<body>
+  <script type="module">
+    import init, { run_jaq, run_jaq_values } from 'https://unpkg.com/jaq-wasm/jaq_wasm.js';
 
-  async function main() {
-    // Load and initialize the Wasm module
-    await init();
+    async function main() {
+      // Initialize the WebAssembly module
+      await init();
 
-    // 1. Raw CLI-style output
-    const filter = '.[] | select(.status == "active") | .name';
-    const input = JSON.stringify([
-      { name: "Alice", status: "active" },
-      { name: "Bob", status: "inactive" },
-      { name: "Charlie", status: "active" }
-    ]);
-    
-    // Returns a Uint8Array containing standard CLI stdout bytes
-    const rawOutputBytes = run_jaq(filter, input);
-    console.log(new TextDecoder().decode(rawOutputBytes));
-    // Output:
-    // "Alice"
-    // "Charlie"
+      // Example 1: Simple object access
+      const data = { name: "Alice", age: 30, city: "New York" };
+      const filter = '.name';
+      const result = JSON.parse(run_jaq_values(filter, JSON.stringify(data)));
+      console.log(result.ok); // "Alice"
 
-    // 2. Structured JSON values
-    const structuredOutputStr = run_jaq_values(filter, input);
-    const result = JSON.parse(structuredOutputStr);
-    
-    if (result.error) {
-      console.error("jaq error:", result.error);
-    } else {
-      console.log("Success:", result.ok);
-      // Output: ["Alice", "Charlie"]
+      // Example 2: Array filtering
+      const users = [
+        { name: "Alice", active: true },
+        { name: "Bob", active: false },
+        { name: "Charlie", active: true }
+      ];
+      const activeUsers = JSON.parse(run_jaq_values('.[] | select(.active) | .name', JSON.stringify(users)));
+      console.log(activeUsers.ok); // ["Alice", "Charlie"]
+
+      // Example 3: Complex transformation
+      const products = [
+        { name: "Laptop", price: 1200, category: "electronics" },
+        { name: "Book", price: 20, category: "books" },
+        { name: "Phone", price: 800, category: "electronics" }
+      ];
+      const electronics = JSON.parse(run_jaq_values('.[] | select(.category == "electronics") | {name, price}', JSON.stringify(products)));
+      console.log(electronics.ok);
+      // [{name: "Laptop", price: 1200}, {name: "Phone", price: 800}]
+
+      // Example 4: Using raw output
+      const rawOutput = run_jaq('.[] | .name', JSON.stringify(users));
+      console.log(new TextDecoder().decode(rawOutput).trim());
+      // "Alice"
+      // "Bob"
+      // "Charlie"
     }
-  }
 
-  main();
-</script>
+    main();
+  </script>
+</body>
+</html>
 ```
 
 ### Node.js
-
-Using modern ES Modules in Node.js:
 
 ```javascript
 import init, { run_jaq, run_jaq_values } from 'jaq-wasm';
@@ -74,64 +81,87 @@ import init, { run_jaq, run_jaq_values } from 'jaq-wasm';
 async function main() {
   await init();
 
-  const input = JSON.stringify({ a: 10, b: 20 });
-  
-  // Calculate sum of values
-  const structured = JSON.parse(run_jaq_values('add', input));
-  
-  if (structured.error) {
-    throw new Error(structured.error);
+  // Example: Process JSON file
+  const fs = await import('fs');
+  const data = JSON.parse(fs.readFileSync('data.json', 'utf8'));
+
+  // Extract specific fields
+  const result = JSON.parse(run_jaq_values('.users[] | {name, email}', JSON.stringify(data)));
+  if (result.error) {
+    console.error('Error:', result.error);
+  } else {
+    console.log('Processed data:', result.ok);
   }
-  
-  console.log("Sum:", structured.ok[0]); // Sum: 30
+
+  // Example: Transform data
+  const input = { items: [1, 2, 3, 4, 5] };
+  const doubled = JSON.parse(run_jaq_values('.items | map(. * 2)', JSON.stringify(input)));
+  console.log('Doubled:', doubled.ok); // [2, 4, 6, 8, 10]
 }
 
 main();
 ```
 
-## Repository Layout
+### CDN Usage
 
-- `src/` - Rust crate that compiles to WebAssembly
-- `jaq-core/`, `jaq-json/`, `jaq-std/`, `jaq-fmts/` - vendored Rust dependencies
-- `pkg/` - wasm-pack publish artifact for npm
-- `examples/` - TypeScript usage examples
+You can also use jaq-wasm directly from a CDN without npm:
 
-## Build
+```html
+<script type="module">
+  import init, { run_jaq_values } from 'https://unpkg.com/jaq-wasm@latest/jaq_wasm.js';
 
-Prerequisites:
-
-- Rust toolchain
-- `wasm-pack`
-- Node.js 18.18 or newer
-
-Build both wasm targets:
-
-```bash
-wasm-pack build --target web --release
-wasm-pack build --target nodejs --release
+  (async () => {
+    await init();
+    const result = JSON.parse(run_jaq_values('. + 1', '5'));
+    console.log(result.ok); // 6
+  })();
+</script>
 ```
 
-## Publish to npm
+## API Reference
 
-The package name is `jaq-wasm`. The published artifact is the generated `pkg/`
-directory.
+### `run_jaq(filter: string, input: string): Uint8Array`
 
-Dry run:
+Runs a jq filter and returns the raw output as bytes, matching the CLI behavior.
 
-```bash
-npm run publish:dry-run
-```
+- `filter`: jq filter expression
+- `input`: JSON string to process
+- Returns: `Uint8Array` containing the output bytes
 
-Publish:
+### `run_jaq_values(filter: string, input: string): string`
 
-```bash
-npm run publish:npm
-```
+Runs a jq filter and returns a structured JSON response.
+
+- `filter`: jq filter expression
+- `input`: JSON string to process
+- Returns: JSON string with `{ok: result}` on success or `{error: message}` on failure
+
+## Supported jq Features
+
+jaq-wasm supports most jq features including:
+
+- Object and array access (`.key`, `.[index]`)
+- Filtering (`select()`, `map()`)
+- Arithmetic operations
+- String manipulation
+- Array/object construction
+- Conditionals
+- And much more!
+
+For the full list of supported features, see the [jaq documentation](https://github.com/01mf02/jaq).
 
 ## Contributing
 
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow.
+Contributions are welcome! Please see the [main repository](https://github.com/01mf02/jaq) for jaq development.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT
+
+## Contributing
+
+Contributions are welcome! Please see the [main repository](https://github.com/01mf02/jaq) for jaq development.
+
+## License
+
+MIT
