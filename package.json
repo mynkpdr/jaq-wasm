@@ -1,29 +1,37 @@
 {
-  "name": "jaq-wasm-repo",
-  "private": true,
-  "version": "0.1.0",
-  "description": "Standalone workspace for the jaq WebAssembly package",
-  "type": "module",
-  "license": "MIT",
-  "author": "Mayank Kumar Poddar",
-  "engines": {
-    "node": ">=18.18"
-  },
-  "scripts": {
-    "build:web": "wasm-pack build --target web --release",
-    "build:node": "wasm-pack build --target nodejs --release",
-    "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "wasm-pack test --node",
-    "pack": "cd pkg && npm pack --dry-run",
-    "publish:dry-run": "cd pkg && npm publish --dry-run",
-    "publish:npm": "cd pkg && npm publish --access public"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.20.0",
-    "eslint": "^9.20.0",
-    "globals": "^15.14.0",
-    "typescript": "^5.8.3",
-    "typescript-eslint": "^8.24.1"
-  }
+    "name": "jaq-wasm",
+    "private": true,
+    "version": "0.1.0",
+    "description": "Standalone workspace for the jaq WebAssembly package",
+    "type": "module",
+    "license": "MIT",
+    "author": "Mayank Kumar Poddar",
+    "engines": {
+        "node": ">=18.18"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/mynkpdr/jaq-wasm.git"
+    },
+    "bugs": {
+        "url": "https://github.com/mynkpdr/jaq-wasm/issues"
+    },
+    "homepage": "https://github.com/mynkpdr/jaq-wasm#readme",
+    "scripts": {
+        "build:web": "wasm-pack build --target web --release",
+        "build:node": "wasm-pack build --target nodejs --release",
+        "lint": "eslint .",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "test": "wasm-pack test --node",
+        "pack": "cd pkg && npm pack --dry-run",
+        "publish:dry-run": "cd pkg && npm publish --dry-run",
+        "publish:npm": "cd pkg && npm publish --access public"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.20.0",
+        "eslint": "^9.20.0",
+        "globals": "^15.14.0",
+        "typescript": "^5.8.3",
+        "typescript-eslint": "^8.24.1"
+    }
 }
