@@ -1,0 +1,9 @@
+target/
+node_modules/
+pkg/
+.DS_Store
+.idea/
+.vscode/
+*.log
+coverage/
+dist/
