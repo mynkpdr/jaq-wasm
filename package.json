@@ -1,7 +1,7 @@
 {
     "name": "jaq-wasm",
     "private": true,
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Standalone workspace for the jaq WebAssembly package",
     "type": "module",
     "license": "MIT",
