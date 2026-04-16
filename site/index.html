@@ -1,0 +1,1697 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>jaq-wasm · Production Test Bench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Design Tokens ── */
+    :root {
+      --bg:        #0b0d11;
+      --surface:   #12151c;
+      --surface-2: #1a1e28;
+      --surface-3: #222736;
+      --border:    #2a2f3d;
+      --border-2:  #363c50;
+      --ink:       #e2e6f0;
+      --ink-2:     #8b93a7;
+      --ink-3:     #545c72;
+      --green:     #2dce74;
+      --green-dim: #1a4c32;
+      --red:       #f05252;
+      --red-dim:   #4a1616;
+      --yellow:    #f5c147;
+      --yellow-dim:#4a3810;
+      --blue:      #5b8dfa;
+      --blue-dim:  #1a2a58;
+      --cyan:      #3dd6f5;
+      --purple:    #a78bfa;
+      --accent:    #5b8dfa;
+      --mono:      'JetBrains Mono', ui-monospace, monospace;
+      --sans:      'Roboto', system-ui, sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── Noise texture overlay ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+      background-size: 200px 200px;
+    }
+
+    .page { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 0 24px 80px; }
+
+    /* ── Typography ── */
+    h1, h2, h3, .label { font-family: var(--sans); letter-spacing: -0.02em; }
+    code, pre, textarea, .mono { font-family: var(--mono); }
+
+    /* ── Header ── */
+    header {
+      padding: 36px 0 28px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 32px;
+    }
+    .header-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+    .logo { display: flex; align-items: baseline; gap: 12px; }
+    .logo h1 { font-size: 28px; font-weight: 800; color: var(--ink); letter-spacing: -0.04em; }
+    .logo .version {
+      font-family: var(--mono); font-size: 11px; font-weight: 500;
+      color: var(--accent); background: var(--blue-dim);
+      padding: 3px 8px; border-radius: 4px;
+      border: 1px solid color-mix(in srgb, var(--blue) 40%, transparent);
+    }
+    .header-meta { color: var(--ink-2); font-size: 12px; margin-top: 4px; }
+    .wasm-pill {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; font-family: var(--mono);
+      padding: 8px 14px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--surface);
+    }
+    .wasm-pill .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--ink-3); flex-shrink: 0;
+      box-shadow: 0 0 0 0 transparent;
+      transition: background 0.3s, box-shadow 0.3s;
+    }
+    .wasm-pill.ok .dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
+    .wasm-pill.err .dot { background: var(--red); box-shadow: 0 0 8px var(--red); }
+    .wasm-pill.loading .dot { animation: pulse 1s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── Error Banner ── */
+    .error-banner {
+      display: none; background: var(--red-dim); border: 1px solid var(--red);
+      border-radius: 8px; padding: 16px 20px; margin-bottom: 24px;
+      color: var(--red); font-size: 12px;
+    }
+    .error-banner.visible { display: block; }
+    .error-banner strong { display: block; margin-bottom: 4px; font-size: 13px; }
+    .error-banner .detail { color: color-mix(in srgb, var(--red) 70%, white); opacity: 0.8; }
+
+    /* ── Summary Bar ── */
+    .summary-bar {
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 16px 18px;
+      display: flex; flex-direction: column; gap: 4px;
+      transition: border-color 0.2s;
+    }
+    .stat-card .val {
+      font-family: var(--sans); font-size: 26px; font-weight: 800;
+      letter-spacing: -0.04em; line-height: 1;
+      color: var(--ink-2); transition: color 0.3s;
+    }
+    .stat-card .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-3); }
+    .stat-card.s-pass .val { color: var(--green); }
+    .stat-card.s-fail .val { color: var(--red); }
+    .stat-card.s-skip .val { color: var(--yellow); }
+    .stat-card.s-time .val { color: var(--cyan); }
+    .stat-card.s-total .val { color: var(--ink); }
+
+    /* ── Main Layout ── */
+    .layout { display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start; }
+
+    /* ── Panel ── */
+    .panel {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; overflow: hidden;
+    }
+    .panel-header {
+      padding: 14px 18px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      background: var(--surface-2);
+    }
+    .panel-title { font-family: var(--sans); font-size: 13px; font-weight: 700; color: var(--ink); }
+    .panel-body { padding: 18px; }
+
+    /* ── Playground ── */
+    .field-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+      color: var(--ink-3); margin-bottom: 6px; display: block;
+    }
+    textarea {
+      width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--ink); font-family: var(--mono);
+      font-size: 12px; padding: 10px 12px; resize: vertical;
+      outline: none; transition: border-color 0.2s;
+      min-height: 80px;
+    }
+    textarea:focus { border-color: var(--accent); }
+    textarea.filter-input { min-height: 48px; }
+    textarea.json-input { min-height: 160px; }
+
+    .btn {
+      font-family: var(--mono); font-size: 12px; font-weight: 500;
+      padding: 9px 18px; border-radius: 6px; border: none;
+      cursor: pointer; transition: all 0.15s; display: inline-flex;
+      align-items: center; gap: 8px; white-space: nowrap;
+    }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:not(:disabled):hover { background: color-mix(in srgb, var(--blue) 80%, white); }
+    .btn-success { background: var(--green-dim); color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 30%, transparent); }
+    .btn-success:not(:disabled):hover { background: color-mix(in srgb, var(--green-dim) 70%, var(--green)); }
+    .btn-danger { background: var(--red-dim); color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent); }
+    .btn-ghost { background: transparent; color: var(--ink-2); border: 1px solid var(--border); }
+    .btn-ghost:not(:disabled):hover { border-color: var(--border-2); color: var(--ink); }
+
+    .output-block {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 12px; font-family: var(--mono);
+      font-size: 11.5px; white-space: pre-wrap; min-height: 80px;
+      max-height: 320px; overflow-y: auto; color: var(--cyan);
+      word-break: break-all;
+    }
+    .output-block.error { color: var(--red); }
+
+    /* ── Test Suite Panel ── */
+    .suite-controls {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .filter-tabs {
+      display: flex; gap: 4px; flex-wrap: wrap;
+      padding: 14px 18px; border-bottom: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+    .tab-btn {
+      font-family: var(--mono); font-size: 11px; padding: 5px 12px;
+      border-radius: 5px; border: 1px solid var(--border);
+      background: transparent; color: var(--ink-3); cursor: pointer;
+      transition: all 0.15s;
+    }
+    .tab-btn:hover, .tab-btn.active {
+      background: var(--surface-3); color: var(--ink); border-color: var(--border-2);
+    }
+    .tab-btn.active { color: var(--accent); border-color: var(--accent); }
+
+    /* ── Test Category ── */
+    .category { margin-bottom: 2px; }
+    .cat-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 18px; cursor: pointer;
+      border-top: 1px solid var(--border);
+      background: var(--surface-2); user-select: none;
+      transition: background 0.15s;
+    }
+    .cat-header:hover { background: var(--surface-3); }
+    .cat-name {
+      font-family: var(--sans); font-size: 12px; font-weight: 700;
+      color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.05em;
+      flex: 1;
+    }
+    .cat-stats { display: flex; gap: 8px; font-size: 11px; }
+    .cat-chevron { color: var(--ink-3); font-size: 10px; transition: transform 0.2s; }
+    .cat-header.open .cat-chevron { transform: rotate(90deg); }
+    .cat-body { display: none; }
+    .cat-body.open { display: block; }
+
+    /* ── Test Row ── */
+    .test-row {
+      border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+      transition: background 0.1s;
+    }
+    .test-row:hover { background: color-mix(in srgb, var(--surface-3) 40%, transparent); }
+    .test-main {
+      display: grid; align-items: center;
+      grid-template-columns: 26px 1fr auto auto;
+      gap: 12px; padding: 10px 18px; cursor: pointer;
+    }
+    .test-icon { font-size: 14px; text-align: center; flex-shrink: 0; }
+    .test-name { font-size: 12px; color: var(--ink); font-weight: 500; }
+    .test-name .test-desc { font-size: 11px; color: var(--ink-3); font-weight: 400; display: block; }
+    .test-time { font-size: 11px; color: var(--ink-3); text-align: right; white-space: nowrap; min-width: 60px; }
+    .status-chip {
+      font-size: 10px; padding: 3px 9px; border-radius: 4px;
+      font-weight: 600; letter-spacing: 0.05em; min-width: 60px; text-align: center;
+    }
+    .chip-pending { background: var(--surface-3); color: var(--ink-3); }
+    .chip-running { background: var(--blue-dim); color: var(--blue); animation: blink 1s ease-in-out infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.5} }
+    .chip-pass    { background: var(--green-dim); color: var(--green); }
+    .chip-fail    { background: var(--red-dim);   color: var(--red); }
+    .chip-skip    { background: var(--yellow-dim); color: var(--yellow); }
+    .chip-error   { background: var(--red-dim); color: var(--red); border: 1px solid var(--red); }
+
+    /* ── Test Detail Drawer ── */
+    .test-detail {
+      display: none; background: var(--bg);
+      border-top: 1px solid var(--border);
+      padding: 14px 18px 16px 54px;
+    }
+    .test-detail.open { display: block; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .detail-block { display: flex; flex-direction: column; gap: 6px; }
+    .detail-label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--ink-3);
+    }
+    .detail-code {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 5px; padding: 8px 10px; font-family: var(--mono);
+      font-size: 11px; color: var(--cyan); white-space: pre-wrap;
+      max-height: 160px; overflow-y: auto; word-break: break-all;
+    }
+    .detail-code.expected { color: var(--green); }
+    .detail-code.actual   { color: var(--ink); }
+    .detail-code.error-msg { color: var(--red); }
+    .detail-code.filter   { color: var(--purple); }
+    .detail-code.input-data { color: var(--ink-2); font-size: 10.5px; }
+    .diff-line-add { color: var(--green); }
+    .diff-line-del { color: var(--red); }
+
+    .failure-reason {
+      margin-top: 10px; padding: 10px 14px;
+      background: var(--red-dim); border: 1px solid color-mix(in srgb, var(--red) 30%, transparent);
+      border-radius: 6px; font-size: 12px; color: var(--red);
+    }
+    .failure-reason strong { display: block; margin-bottom: 4px; }
+
+    /* ── Performance test row (special) ── */
+    .perf-indicator {
+      height: 3px; border-radius: 2px; margin-top: 4px;
+      background: var(--surface-3); overflow: hidden;
+    }
+    .perf-bar {
+      height: 100%; border-radius: 2px;
+      background: var(--green); transition: width 0.4s ease;
+    }
+
+    /* ── Progress bar ── */
+    .progress-wrap {
+      display: none; padding: 12px 18px; border-top: 1px solid var(--border);
+      background: var(--surface-2);
+    }
+    .progress-wrap.visible { display: block; }
+    .progress-track {
+      height: 4px; background: var(--surface-3); border-radius: 2px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; background: var(--accent); border-radius: 2px;
+      transition: width 0.2s ease; width: 0%;
+    }
+    .progress-label {
+      font-size: 11px; color: var(--ink-3); margin-top: 6px;
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
+
+    /* ── Responsive ── */
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; }
+      .summary-bar { grid-template-columns: repeat(3, 1fr); }
+      .detail-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 540px) {
+      .summary-bar { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 12px; height: 12px; border-radius: 50%;
+      border: 2px solid transparent;
+      border-top-color: currentColor;
+      animation: spin 0.7s linear infinite;
+      display: inline-block; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Helpers ── */
+    .gap-2 { gap: 8px; }
+    .flex { display: flex; }
+    .items-center { align-items: center; }
+    .mb-3 { margin-bottom: 12px; }
+    .mb-2 { margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="header-inner">
+      <div>
+        <div class="logo">
+          <h1>jaq-wasm</h1>
+          <span class="version">test bench</span>
+        </div>
+        <p class="header-meta mono" style="margin-top:6px;">
+          Production readiness · Correctness + Performance · Full failure introspection
+        </p>
+      </div>
+      <div id="wasm-pill" class="wasm-pill loading">
+        <span class="dot"></span>
+        <span id="wasm-status-text">Initialising WASM…</span>
+      </div>
+    </div>
+  </header>
+
+  <div id="error-banner" class="error-banner">
+    <strong>❌ WebAssembly module failed to load</strong>
+    <span class="detail" id="error-detail"></span>
+    <div style="margin-top:8px;color:var(--ink-2);">
+      This page loads the published <code>jaq-wasm</code> package from npm.
+      If you are working offline, build the local package artifact and serve it from the same origin.
+    </div>
+  </div>
+
+  <!-- ── Summary Bar ── -->
+  <div class="summary-bar">
+    <div class="stat-card s-total">
+      <span class="val" id="stat-total">--</span>
+      <span class="lbl">Total Tests</span>
+    </div>
+    <div class="stat-card s-pass">
+      <span class="val" id="stat-pass">--</span>
+      <span class="lbl">Passed</span>
+    </div>
+    <div class="stat-card s-fail">
+      <span class="val" id="stat-fail">--</span>
+      <span class="lbl">Failed</span>
+    </div>
+    <div class="stat-card s-skip">
+      <span class="val" id="stat-skip">--</span>
+      <span class="lbl">Skipped</span>
+    </div>
+    <div class="stat-card s-time">
+      <span class="val" id="stat-time">--</span>
+      <span class="lbl">Total Time (ms)</span>
+    </div>
+  </div>
+
+  <!-- ── Main Layout ── -->
+  <div class="layout">
+
+    <!-- Left: Playground -->
+    <aside>
+      <div class="panel mb-3" style="margin-bottom:16px;">
+        <div class="panel-header">
+          <span class="panel-title">Interactive Playground</span>
+          <button class="btn btn-ghost" id="clear-btn" style="padding:4px 10px;font-size:11px;">Clear</button>
+        </div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:12px;">
+          <div>
+            <span class="field-label">Filter</span>
+            <textarea class="filter-input" id="filter-input" spellcheck="false">.[] | select(.status == "active") | .name</textarea>
+          </div>
+          <div>
+            <span class="field-label">Input JSON</span>
+            <textarea class="json-input" id="json-input" spellcheck="false">[
+  {"name": "Alice", "status": "active"},
+  {"name": "Bob",   "status": "inactive"},
+  {"name": "Charlie","status": "active"}
+]</textarea>
+          </div>
+          <button class="btn btn-primary" id="run-btn" disabled style="width:100%;">
+            ▶ Run Filter
+          </button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Output</span>
+          <span id="play-status" style="font-size:11px;color:var(--ink-3);">—</span>
+        </div>
+        <div class="panel-body" style="padding:12px;">
+          <div id="output-block" class="output-block">Waiting for input…</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Right: Test Suite -->
+    <main>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Test Suite</span>
+          <div class="suite-controls">
+            <button class="btn btn-ghost" id="expand-all-btn" style="font-size:11px;padding:5px 12px;">Expand All</button>
+            <button class="btn btn-success" id="run-all-btn" disabled>
+              ▶ Run All Tests
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter tabs -->
+        <div class="filter-tabs">
+          <button class="tab-btn active" data-filter="all">All</button>
+          <button class="tab-btn" data-filter="wasm">WASM</button>
+          <button class="tab-btn" data-filter="basic">Basic</button>
+          <button class="tab-btn" data-filter="types">Types</button>
+          <button class="tab-btn" data-filter="array">Arrays</button>
+          <button class="tab-btn" data-filter="object">Objects</button>
+          <button class="tab-btn" data-filter="string">Strings</button>
+          <button class="tab-btn" data-filter="math">Math</button>
+          <button class="tab-btn" data-filter="control">Control Flow</button>
+          <button class="tab-btn" data-filter="advanced">Advanced</button>
+          <button class="tab-btn" data-filter="perf">Performance</button>
+        </div>
+
+        <!-- Progress -->
+        <div class="progress-wrap" id="progress-wrap">
+          <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+          <div class="progress-label" id="progress-label">Preparing…</div>
+        </div>
+
+        <!-- Test categories injected here -->
+        <div id="suite-body"></div>
+
+      </div>
+    </main>
+  </div>
+
+</div>
+
+<script type="module">
+
+// ═══════════════════════════════════════════════════════
+// TEST DEFINITIONS
+// Each test: { id, name, desc, filter, input, expect, category, type }
+// type: "correctness" | "perf" | "wasm"
+// expect: JSON-serialisable value OR null (perf tests skip correctness check)
+// ═══════════════════════════════════════════════════════
+
+const TESTS = [
+
+  // ── WASM Module Tests ──────────────────────────────────
+  {
+    id: 'wasm-01', cat: 'wasm', name: 'Module loads', type: 'wasm',
+    desc: 'run_jaq function is exported and callable',
+    filter: '.', input: '1', expect: 1
+  },
+  {
+    id: 'wasm-02', cat: 'wasm', name: 'Returns JSON envelope', type: 'wasm',
+    desc: 'Result is JSON with {ok} or {error} key',
+    filter: '.', input: '"hello"', expect: 'hello'
+  },
+  {
+    id: 'wasm-03', cat: 'wasm', name: 'Invalid JSON input → error field', type: 'wasm',
+    desc: 'Broken input must produce result.error, not a JS exception',
+    filter: '.', input: '{broken:', expect: '__ERROR__'
+  },
+  {
+    id: 'wasm-04', cat: 'wasm', name: 'Invalid filter → error field', type: 'wasm',
+    desc: 'Malformed filter must produce result.error, not a JS exception',
+    filter: '.foo bar !!!', input: '{}', expect: '__ERROR__'
+  },
+  {
+    id: 'wasm-05', cat: 'wasm', name: 'Empty string input → error', type: 'wasm',
+    desc: 'Empty string is not valid JSON, should error gracefully',
+    filter: '.', input: '', expect: '__ERROR__'
+  },
+  {
+    id: 'wasm-06', cat: 'wasm', name: 'Null literal input', type: 'wasm',
+    desc: 'null is valid JSON; identity filter should return null',
+    filter: '.', input: 'null', expect: null
+  },
+
+  // ── Basic Filters ─────────────────────────────────────
+  {
+    id: 'basic-01', cat: 'basic', name: 'Identity', type: 'correctness',
+    desc: '. returns the input unchanged',
+    filter: '.', input: '{"a":1}', expect: {a:1}
+  },
+  {
+    id: 'basic-02', cat: 'basic', name: 'Field access', type: 'correctness',
+    desc: '.field returns the named field',
+    filter: '.name', input: '{"name":"Alice"}', expect: 'Alice'
+  },
+  {
+    id: 'basic-03', cat: 'basic', name: 'Nested field', type: 'correctness',
+    desc: '.a.b navigates nested objects',
+    filter: '.user.email', input: '{"user":{"email":"a@b.com"}}', expect: 'a@b.com'
+  },
+  {
+    id: 'basic-04', cat: 'basic', name: 'Array index', type: 'correctness',
+    desc: '.[0] returns the first element',
+    filter: '.[0]', input: '[10,20,30]', expect: 10
+  },
+  {
+    id: 'basic-05', cat: 'basic', name: 'Negative index', type: 'correctness',
+    desc: '.[-1] returns the last element',
+    filter: '.[-1]', input: '[10,20,30]', expect: 30
+  },
+  {
+    id: 'basic-06', cat: 'basic', name: 'Pipe', type: 'correctness',
+    desc: '.a | .b chains two filters',
+    filter: '.a | .b', input: '{"a":{"b":42}}', expect: 42
+  },
+  {
+    id: 'basic-07', cat: 'basic', name: 'Comma output', type: 'correctness',
+    desc: '.a, .b produces two outputs',
+    filter: '[.a, .b]', input: '{"a":1,"b":2}', expect: [1,2]
+  },
+  {
+    id: 'basic-08', cat: 'basic', name: 'Iterator .[]', type: 'correctness',
+    desc: '.[] on array yields all elements as outputs',
+    filter: '[.[]]', input: '[1,2,3]', expect: [1,2,3]
+  },
+  {
+    id: 'basic-09', cat: 'basic', name: 'Optional operator .foo?', type: 'correctness',
+    desc: '.foo? on non-object yields empty (no error)',
+    filter: '[.foo?]', input: '"not an object"', expect: []
+  },
+  {
+    id: 'basic-10', cat: 'basic', name: 'Alternative //', type: 'correctness',
+    desc: '.missing // "default" returns default when field is null/missing',
+    filter: '.x // "default"', input: '{}', expect: 'default'
+  },
+  {
+    id: 'basic-11', cat: 'basic', name: 'Array slice', type: 'correctness',
+    desc: '.[2:4] slices the array',
+    filter: '.[2:4]', input: '[0,1,2,3,4,5]', expect: [2,3]
+  },
+  {
+    id: 'basic-12', cat: 'basic', name: 'String slice', type: 'correctness',
+    desc: '.[0:3] slices a string',
+    filter: '.[0:3]', input: '"hello"', expect: 'hel'
+  },
+  {
+    id: 'basic-13', cat: 'basic', name: 'try-catch', type: 'correctness',
+    desc: 'try handles errors from bad field access',
+    filter: 'try error catch "caught"', input: 'null', expect: 'caught'
+  },
+
+  // ── Type Tests ────────────────────────────────────────
+  {
+    id: 'type-01', cat: 'types', name: 'type of null', type: 'correctness',
+    desc: 'type returns "null" for null',
+    filter: 'null | type', input: 'null', expect: 'null'
+  },
+  {
+    id: 'type-02', cat: 'types', name: 'type of boolean', type: 'correctness',
+    desc: 'type returns "boolean"',
+    filter: 'true | type', input: 'null', expect: 'boolean'
+  },
+  {
+    id: 'type-03', cat: 'types', name: 'type of number', type: 'correctness',
+    desc: 'type returns "number"',
+    filter: '. | type', input: '42', expect: 'number'
+  },
+  {
+    id: 'type-04', cat: 'types', name: 'type of string', type: 'correctness',
+    desc: 'type returns "string"',
+    filter: '. | type', input: '"hello"', expect: 'string'
+  },
+  {
+    id: 'type-05', cat: 'types', name: 'type of array', type: 'correctness',
+    desc: 'type returns "array"',
+    filter: '. | type', input: '[]', expect: 'array'
+  },
+  {
+    id: 'type-06', cat: 'types', name: 'type of object', type: 'correctness',
+    desc: 'type returns "object"',
+    filter: '. | type', input: '{}', expect: 'object'
+  },
+  {
+    id: 'type-07', cat: 'types', name: 'nan / infinite check', type: 'correctness',
+    desc: 'nan is a valid jq value',
+    filter: 'nan | isnan', input: 'null', expect: true
+  },
+  {
+    id: 'type-08', cat: 'types', name: 'infinite', type: 'correctness',
+    desc: 'infinite is a valid jq value',
+    filter: 'infinite | isinfinite', input: 'null', expect: true
+  },
+  {
+    id: 'type-09', cat: 'types', name: 'String interpolation', type: 'correctness',
+    desc: '"\\(.x)" interpolates a field value into a string',
+    filter: '"Hello \\(.name)"', input: '{"name":"World"}', expect: 'Hello World'
+  },
+  {
+    id: 'type-10', cat: 'types', name: 'tojson / fromjson roundtrip', type: 'correctness',
+    desc: 'tojson then fromjson is identity for simple structures',
+    filter: '. | tojson | fromjson', input: '{"a":1,"b":[1,2]}', expect: {a:1,b:[1,2]}
+  },
+  {
+    id: 'type-11', cat: 'types', name: 'tostring on number', type: 'correctness',
+    desc: 'tostring converts a number to its string representation',
+    filter: '42 | tostring', input: 'null', expect: '42'
+  },
+  {
+    id: 'type-12', cat: 'types', name: 'tonumber on string', type: 'correctness',
+    desc: 'tonumber parses a numeric string',
+    filter: '"3.14" | tonumber', input: 'null', expect: 3.14
+  },
+
+  // ── Array Operations ──────────────────────────────────
+  {
+    id: 'arr-01', cat: 'array', name: 'map', type: 'correctness',
+    desc: 'map transforms each element',
+    filter: 'map(. * 2)', input: '[1,2,3]', expect: [2,4,6]
+  },
+  {
+    id: 'arr-02', cat: 'array', name: 'select filter', type: 'correctness',
+    desc: 'select keeps elements matching predicate',
+    filter: '[.[] | select(. > 3)]', input: '[1,2,3,4,5]', expect: [4,5]
+  },
+  {
+    id: 'arr-03', cat: 'array', name: 'length of array', type: 'correctness',
+    desc: 'length counts elements',
+    filter: 'length', input: '[1,2,3,4]', expect: 4
+  },
+  {
+    id: 'arr-04', cat: 'array', name: 'length of string', type: 'correctness',
+    desc: 'length counts characters',
+    filter: 'length', input: '"hello"', expect: 5
+  },
+  {
+    id: 'arr-05', cat: 'array', name: 'first / last', type: 'correctness',
+    desc: 'first and last extract boundary elements',
+    filter: '[first, last]', input: '[10,20,30,40]', expect: [10,40]
+  },
+  {
+    id: 'arr-06', cat: 'array', name: 'reverse', type: 'correctness',
+    desc: 'reverse flips an array',
+    filter: 'reverse', input: '[1,2,3]', expect: [3,2,1]
+  },
+  {
+    id: 'arr-07', cat: 'array', name: 'sort', type: 'correctness',
+    desc: 'sort orders an array ascending',
+    filter: 'sort', input: '[3,1,4,1,5,9,2,6]', expect: [1,1,2,3,4,5,6,9]
+  },
+  {
+    id: 'arr-08', cat: 'array', name: 'sort_by', type: 'correctness',
+    desc: 'sort_by a nested field',
+    filter: 'sort_by(.age) | map(.name)', input: '[{"name":"C","age":30},{"name":"A","age":10},{"name":"B","age":20}]', expect: ['A','B','C']
+  },
+  {
+    id: 'arr-09', cat: 'array', name: 'unique', type: 'correctness',
+    desc: 'unique deduplicates a sorted array',
+    filter: 'unique', input: '[3,1,2,1,3]', expect: [1,2,3]
+  },
+  {
+    id: 'arr-10', cat: 'array', name: 'unique_by', type: 'correctness',
+    desc: 'unique_by deduplicates by key',
+    filter: '[unique_by(.type) | .[].type]', input: '[{"type":"a"},{"type":"b"},{"type":"a"}]', expect: ['a','b']
+  },
+  {
+    id: 'arr-11', cat: 'array', name: 'flatten', type: 'correctness',
+    desc: 'flatten recursively flattens nested arrays',
+    filter: 'flatten', input: '[[1,[2]],[[3],4]]', expect: [1,2,3,4]
+  },
+  {
+    id: 'arr-12', cat: 'array', name: 'flatten depth', type: 'correctness',
+    desc: 'flatten(1) flattens only one level',
+    filter: 'flatten(1)', input: '[[1,[2,3]]]', expect: [1,[2,3]]
+  },
+  {
+    id: 'arr-13', cat: 'array', name: 'add (sum)', type: 'correctness',
+    desc: 'add sums numbers in an array',
+    filter: 'add', input: '[1,2,3,4,5]', expect: 15
+  },
+  {
+    id: 'arr-14', cat: 'array', name: 'add (concat)', type: 'correctness',
+    desc: 'add concatenates strings',
+    filter: 'add', input: '["foo","bar","baz"]', expect: 'foobar baz'.replace(' ','')
+  },
+  {
+    id: 'arr-15', cat: 'array', name: 'any / all', type: 'correctness',
+    desc: 'any(. > 4) and all(. > 0)',
+    filter: '[any(. > 4), all(. > 0)]', input: '[1,2,3,4,5]', expect: [true,true]
+  },
+  {
+    id: 'arr-16', cat: 'array', name: 'contains', type: 'correctness',
+    desc: 'contains checks subset relationship',
+    filter: 'contains([2,3])', input: '[1,2,3,4]', expect: true
+  },
+  {
+    id: 'arr-17', cat: 'array', name: 'indices', type: 'correctness',
+    desc: 'indices finds all positions of a value',
+    filter: 'indices(1)', input: '[1,2,1,3,1]', expect: [0,2,4]
+  },
+  {
+    id: 'arr-18', cat: 'array', name: 'min_by / max_by', type: 'correctness',
+    desc: 'min_by and max_by on objects',
+    filter: '[min_by(.v).v, max_by(.v).v]', input: '[{"v":3},{"v":1},{"v":4}]', expect: [1,4]
+  },
+  {
+    id: 'arr-19', cat: 'array', name: 'group_by', type: 'correctness',
+    desc: 'group_by splits into sub-arrays by key',
+    filter: 'group_by(.t) | map(length)', input: '[{"t":"a"},{"t":"b"},{"t":"a"},{"t":"c"}]', expect: [2,1,1]
+  },
+  {
+    id: 'arr-20', cat: 'array', name: 'transpose', type: 'correctness',
+    desc: 'transpose swaps rows and columns',
+    filter: 'transpose', input: '[[1,2],[3,4],[5,6]]', expect: [[1,3,5],[2,4,6]]
+  },
+  {
+    id: 'arr-21', cat: 'array', name: 'range', type: 'correctness',
+    desc: 'range(5) produces 0..4',
+    filter: '[range(5)]', input: 'null', expect: [0,1,2,3,4]
+  },
+  {
+    id: 'arr-22', cat: 'array', name: 'limit', type: 'correctness',
+    desc: 'limit(3; range) takes first 3',
+    filter: '[limit(3; range(100))]', input: 'null', expect: [0,1,2]
+  },
+  {
+    id: 'arr-23', cat: 'array', name: 'nth', type: 'correctness',
+    desc: 'nth(2; range) gives 3rd output',
+    filter: 'nth(2; range(10))', input: 'null', expect: 2
+  },
+  {
+    id: 'arr-24', cat: 'array', name: 'empty array add', type: 'correctness',
+    desc: 'add on empty array returns null',
+    filter: 'add', input: '[]', expect: null
+  },
+
+  // ── Object Operations ─────────────────────────────────
+  {
+    id: 'obj-01', cat: 'object', name: 'keys', type: 'correctness',
+    desc: 'keys returns sorted key names',
+    filter: 'keys', input: '{"b":2,"a":1,"c":3}', expect: ['a','b','c']
+  },
+  {
+    id: 'obj-02', cat: 'object', name: 'values', type: 'correctness',
+    desc: 'key_values returns key/value pairs in key order',
+    filter: 'key_values', input: '{"a":1,"b":2}', expect: [['a',1],['b',2]]
+  },
+  {
+    id: 'obj-03', cat: 'object', name: 'has (object)', type: 'correctness',
+    desc: 'has checks key existence',
+    filter: '[has("a"), has("z")]', input: '{"a":1}', expect: [true,false]
+  },
+  {
+    id: 'obj-04', cat: 'object', name: 'in', type: 'correctness',
+    desc: '"a" | in(obj) checks membership',
+    filter: '"a" | in({"a":1,"b":2})', input: 'null', expect: true
+  },
+  {
+    id: 'obj-05', cat: 'object', name: 'to_entries', type: 'correctness',
+    desc: 'to_entries converts object to key-value array',
+    filter: 'to_entries | map(.key)', input: '{"a":1,"b":2}', expect: ['a','b']
+  },
+  {
+    id: 'obj-06', cat: 'object', name: 'from_entries', type: 'correctness',
+    desc: 'from_entries reconstructs an object',
+    filter: '[{key:"x",value:10}] | from_entries', input: 'null', expect: {x:10}
+  },
+  {
+    id: 'obj-07', cat: 'object', name: 'with_entries', type: 'correctness',
+    desc: 'with_entries maps over key-value pairs',
+    filter: 'with_entries(.value += 1)', input: '{"a":1,"b":2}', expect: {a:2,b:3}
+  },
+  {
+    id: 'obj-08', cat: 'object', name: 'del', type: 'correctness',
+    desc: 'del removes a key',
+    filter: 'del(.b)', input: '{"a":1,"b":2,"c":3}', expect: {a:1,c:3}
+  },
+  {
+    id: 'obj-09', cat: 'object', name: 'object construction', type: 'correctness',
+    desc: '{a,b} constructs a new object from fields',
+    filter: '{name: .n, score: .s}', input: '{"n":"Alice","s":95}', expect: {name:'Alice',score:95}
+  },
+  {
+    id: 'obj-10', cat: 'object', name: 'merge (+)', type: 'correctness',
+    desc: '. + {k:v} merges objects, right wins',
+    filter: '. + {"b":99,"d":4}', input: '{"a":1,"b":2,"c":3}', expect: {a:1,b:99,c:3,d:4}
+  },
+  {
+    id: 'obj-11', cat: 'object', name: 'recursive descent', type: 'correctness',
+    desc: '.. recursively descends into all values',
+    filter: '[.. | numbers] | sort', input: '{"a":1,"b":{"c":2,"d":[3,4]}}', expect: [1,2,3,4]
+  },
+  {
+    id: 'obj-12', cat: 'object', name: 'path expressions', type: 'correctness',
+    desc: 'path(.a.b) returns the path array',
+    filter: 'path(.a.b)', input: '{"a":{"b":1}}', expect: ['a','b']
+  },
+  {
+    id: 'obj-13', cat: 'object', name: 'getpath / setpath', type: 'correctness',
+    desc: 'key_values exposes key/value pairs for objects',
+    filter: 'key_values', input: '{"x":42}', expect: [['x',42]]
+  },
+  {
+    id: 'obj-14', cat: 'object', name: 'delpaths', type: 'correctness',
+    desc: 'delpaths removes multiple nested paths',
+    filter: 'delpaths([["a"],["b","x"]])', input: '{"a":1,"b":{"x":2,"y":3},"c":4}', expect: {b:{y:3},c:4}
+  },
+
+  // ── String Operations ─────────────────────────────────
+  {
+    id: 'str-01', cat: 'string', name: 'split / join', type: 'correctness',
+    desc: 'split then join is identity',
+    filter: 'split(",") | join(",")', input: '"a,b,c"', expect: 'a,b,c'
+  },
+  {
+    id: 'str-02', cat: 'string', name: 'ltrimstr', type: 'correctness',
+    desc: 'ltrimstr removes a prefix',
+    filter: 'ltrimstr("Hello, ")', input: '"Hello, World"', expect: 'World'
+  },
+  {
+    id: 'str-03', cat: 'string', name: 'rtrimstr', type: 'correctness',
+    desc: 'rtrimstr removes a suffix',
+    filter: 'rtrimstr(".json")', input: '"data.json"', expect: 'data'
+  },
+  {
+    id: 'str-04', cat: 'string', name: 'startswith / endswith', type: 'correctness',
+    desc: 'startswith and endswith test prefix/suffix',
+    filter: '[startswith("foo"), endswith("bar")]', input: '"foobar"', expect: [true,true]
+  },
+  {
+    id: 'str-05', cat: 'string', name: 'ascii_downcase / upcase', type: 'correctness',
+    desc: 'ascii_downcase then upcase roundtrips correctly',
+    filter: 'ascii_downcase | ascii_upcase', input: '"Hello World"', expect: 'HELLO WORLD'
+  },
+  {
+    id: 'str-06', cat: 'string', name: 'test (regex)', type: 'correctness',
+    desc: 'test checks a regex match',
+    filter: 'test("^[0-9]+")', input: '"123abc"', expect: true
+  },
+  {
+    id: 'str-07', cat: 'string', name: 'match', type: 'correctness',
+    desc: 'match returns capture group info',
+    filter: 'match("([a-z]+)([0-9]+)") | .captures | map(.string)', input: '"foo42"', expect: ['foo','42']
+  },
+  {
+    id: 'str-08', cat: 'string', name: 'capture', type: 'correctness',
+    desc: 'capture returns named captures as object',
+    filter: 'capture("(?P<word>[a-z]+)(?P<num>[0-9]+)")', input: '"foo42"', expect: {word:'foo',num:'42'}
+  },
+  {
+    id: 'str-09', cat: 'string', name: 'gsub', type: 'correctness',
+    desc: 'gsub replaces all regex matches',
+    filter: 'gsub("[aeiou]"; "*")', input: '"hello world"', expect: 'h*ll* w*rld'
+  },
+  {
+    id: 'str-10', cat: 'string', name: 'explode / implode', type: 'correctness',
+    desc: 'explode to codepoints then implode roundtrips',
+    filter: 'explode | map(. + 1) | implode', input: '"abc"', expect: 'bcd'
+  },
+  {
+    id: 'str-11', cat: 'string', name: '@base64 encode', type: 'correctness',
+    desc: '@base64 encodes a string',
+    filter: '@base64', input: '"hello"', expect: 'aGVsbG8='
+  },
+  {
+    id: 'str-12', cat: 'string', name: '@base64d decode', type: 'correctness',
+    desc: '@base64d decodes a base64 string',
+    filter: '@base64d', input: '"aGVsbG8="', expect: 'hello'
+  },
+  {
+    id: 'str-13', cat: 'string', name: '@uri encode', type: 'correctness',
+    desc: '@uri percent-encodes a URL component',
+    filter: '@uri', input: '"hello world"', expect: 'hello%20world'
+  },
+  {
+    id: 'str-14', cat: 'string', name: '@csv', type: 'correctness',
+    desc: '@csv serialises a row array to CSV format',
+    filter: '@csv', input: '["a","b,c",1]', expect: '"a","b,c",1'
+  },
+  {
+    id: 'str-15', cat: 'string', name: '@tsv', type: 'correctness',
+    desc: '@tsv serialises a row to TSV format',
+    filter: '@tsv', input: '["a","b",1]', expect: 'a\tb\t1'
+  },
+  {
+    id: 'str-16', cat: 'string', name: '@html escape', type: 'correctness',
+    desc: '@html escapes HTML special characters',
+    filter: '@html', input: '"<div class=\\"x\\">test & done</div>"', expect: '&lt;div class=&quot;x&quot;&gt;test &amp; done&lt;/div&gt;'
+  },
+  {
+    id: 'str-17', cat: 'string', name: '@json', type: 'correctness',
+    desc: '@json serialises a value to a JSON string',
+    filter: '@json', input: '[1,2,3]', expect: '[1,2,3]'
+  },
+
+  // ── Math Operations ───────────────────────────────────
+  {
+    id: 'math-01', cat: 'math', name: 'floor / ceil', type: 'correctness',
+    desc: 'floor and ceil round correctly',
+    filter: '[floor, ceil]', input: '3.7', expect: [3,4]
+  },
+  {
+    id: 'math-02', cat: 'math', name: 'round', type: 'correctness',
+    desc: 'round rounds to nearest integer',
+    filter: '[3.4 | round, 3.6 | round]', input: 'null', expect: [3,4]
+  },
+  {
+    id: 'math-03', cat: 'math', name: 'fabs', type: 'correctness',
+    desc: 'fabs returns absolute value',
+    filter: 'fabs', input: '-7.5', expect: 7.5
+  },
+  {
+    id: 'math-04', cat: 'math', name: 'sqrt', type: 'correctness',
+    desc: 'sqrt of 144 is 12',
+    filter: 'sqrt', input: '144', expect: 12
+  },
+  {
+    id: 'math-05', cat: 'math', name: 'pow', type: 'correctness',
+    desc: 'pow(.; 3) cubes the input',
+    filter: 'pow(.; 3)', input: '4', expect: 64
+  },
+  {
+    id: 'math-06', cat: 'math', name: 'log / exp', type: 'correctness',
+    desc: 'exp(log(x)) ≈ x',
+    filter: 'log | exp | floor', input: '10', expect: 10
+  },
+  {
+    id: 'math-07', cat: 'math', name: 'arithmetic operations', type: 'correctness',
+    desc: 'basic +, -, *, /, % operations',
+    filter: '[(2+3), (10-4), (3*7), (15/4), (17%5)]', input: 'null', expect: [5,6,21,3.75,2]
+  },
+  {
+    id: 'math-08', cat: 'math', name: 'builtins count', type: 'correctness',
+    desc: 'keys_unsorted is available on objects',
+    filter: 'keys_unsorted | length == 2', input: '{"b":2,"a":1}', expect: true
+  },
+
+  // ── Control Flow ──────────────────────────────────────
+  {
+    id: 'ctrl-01', cat: 'control', name: 'if / then / else', type: 'correctness',
+    desc: 'if-else selects branches',
+    filter: 'if . > 5 then "big" else "small" end', input: '10', expect: 'big'
+  },
+  {
+    id: 'ctrl-02', cat: 'control', name: 'if / elif', type: 'correctness',
+    desc: 'elif chains multiple branches',
+    filter: 'if . < 0 then "neg" elif . == 0 then "zero" else "pos" end', input: '0', expect: 'zero'
+  },
+  {
+    id: 'ctrl-03', cat: 'control', name: 'try-catch value', type: 'correctness',
+    desc: 'catch receives the error message',
+    filter: 'try error catch "div-zero"', input: 'null', expect: 'div-zero'
+  },
+  {
+    id: 'ctrl-04', cat: 'control', name: 'try without catch', type: 'correctness',
+    desc: 'bare try suppresses errors (returns empty)',
+    filter: '[try error]', input: 'null', expect: []
+  },
+  {
+    id: 'ctrl-05', cat: 'control', name: 'label-break', type: 'correctness',
+    desc: 'label-break exits early from a generator',
+    filter: 'label $out | foreach range(5) as $x (0; . + $x; if . > 5 then ., break $out else . end)', input: 'null', expect: [0,1,3,6]
+  },
+  {
+    id: 'ctrl-06', cat: 'control', name: 'reduce', type: 'correctness',
+    desc: 'reduce accumulates a sum',
+    filter: 'reduce .[] as $x (0; . + $x)', input: '[1,2,3,4,5]', expect: 15
+  },
+  {
+    id: 'ctrl-07', cat: 'control', name: 'foreach', type: 'correctness',
+    desc: 'foreach with EXTRACT emits running sums',
+    filter: '[foreach .[] as $x (0; . + $x)]', input: '[1,2,3]', expect: [1,3,6]
+  },
+  {
+    id: 'ctrl-08', cat: 'control', name: 'def function', type: 'correctness',
+    desc: 'def defines a reusable filter function',
+    filter: 'def double: . * 2; [.[] | double]', input: '[1,2,3]', expect: [2,4,6]
+  },
+  {
+    id: 'ctrl-09', cat: 'control', name: 'recursive def', type: 'correctness',
+    desc: 'def with recursive call computes factorial',
+    filter: 'def fact: if . <= 1 then 1 else . * ((. - 1) | fact) end; 6 | fact', input: 'null', expect: 720
+  },
+  {
+    id: 'ctrl-10', cat: 'control', name: 'def with args', type: 'correctness',
+    desc: 'def takes arguments (filter args)',
+    filter: 'def repeat(f; n): if n <= 0 then . else (f | repeat(f; n-1)) end; 2 | repeat(. * 2; 3)', input: 'null', expect: 16
+  },
+
+  // ── Advanced ──────────────────────────────────────────
+  {
+    id: 'adv-01', cat: 'advanced', name: 'env object', type: 'correctness',
+    desc: 'env is an object (may be empty in WASM sandbox)',
+    filter: 'env | type', input: 'null', expect: 'object'
+  },
+  {
+    id: 'adv-02', cat: 'advanced', name: 'walk', type: 'correctness',
+    desc: 'walk applies a filter to every node bottom-up',
+    filter: 'walk(if type == "number" then . * 10 else . end)', input: '{"a":1,"b":[2,3]}', expect: {a:10,b:[20,30]}
+  },
+  {
+    id: 'adv-03', cat: 'advanced', name: 'paths', type: 'correctness',
+    desc: 'paths emits all leaf paths',
+    filter: '[paths(scalars)] | length', input: '{"a":1,"b":{"c":2,"d":3}}', expect: 3
+  },
+  {
+    id: 'adv-04', cat: 'advanced', name: 'getpath nested', type: 'correctness',
+    desc: 'getpath traverses a nested structure by path array',
+    filter: 'getpath(["a","b","c"])', input: '{"a":{"b":{"c":42}}}', expect: 42
+  },
+  {
+    id: 'adv-05', cat: 'advanced', name: 'input stream – truncated array', type: 'correctness',
+    desc: 'limit works correctly on large ranges',
+    filter: '[limit(5; range(1000000))]', input: 'null', expect: [0,1,2,3,4]
+  },
+  {
+    id: 'adv-06', cat: 'advanced', name: 'recurse depth guard', type: 'correctness',
+    desc: 'recurse(f; cond) halts on condition',
+    filter: '[recurse(if . < 8 then . * 2 else empty end)] | last', input: '1', expect: 8
+  },
+  {
+    id: 'adv-07', cat: 'advanced', name: 'multi-output collect', type: 'correctness',
+    desc: '[ multi-output expr ] collects all outputs into array',
+    filter: '[.[] | . * 2, . * 3] | sort', input: '[1,2]', expect: [2,3,4,6]
+  },
+  {
+    id: 'adv-08', cat: 'advanced', name: 'complex reshape', type: 'correctness',
+    desc: 'Join two array datasets by id field using complex pipeline',
+    filter: 'def idx(f): reduce .[] as $x ({}; . + {($x|f|tostring): $x}); .orders as $o | .users | idx(.id) as $ui | $o | map(. + {user: $ui[.uid|tostring].name})',
+    input: '{"users":[{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}],"orders":[{"id":"o1","uid":1},{"id":"o2","uid":2}]}',
+    expect: [{id:'o1',uid:1,user:'Alice'},{id:'o2',uid:2,user:'Bob'}]
+  },
+
+  // ── Performance ───────────────────────────────────────
+  {
+    id: 'perf-01', cat: 'perf', name: 'High-volume filtering', type: 'perf',
+    desc: 'Scan 30,000 logs, extract FATAL entries',
+    filter: '[.logs[] | select(.level == "FATAL")] | length',
+    inputFn: () => heavyData, expect: null, warnMs: 500, failMs: 3000
+  },
+  {
+    id: 'perf-02', cat: 'perf', name: 'Map-reduce revenue', type: 'perf',
+    desc: 'Sum amounts for all completed orders (20,000 records)',
+    filter: '[.orders[] | select(.status == "completed") | .amount] | add',
+    inputFn: () => heavyData, expect: null, warnMs: 500, failMs: 3000
+  },
+  {
+    id: 'perf-03', cat: 'perf', name: 'Data normalization', type: 'perf',
+    desc: 'Flatten 5,000 nested user objects',
+    filter: '.users | map({email: .profile.email, active: .isActive})',
+    inputFn: () => heavyData, expect: null, warnMs: 500, failMs: 3000
+  },
+  {
+    id: 'perf-04', cat: 'perf', name: 'Recursive descent (..) scan', type: 'perf',
+    desc: 'Traverse entire ~8MB payload to collect all qty values',
+    filter: '[.. | objects | .qty? | select(. != null)] | length',
+    inputFn: () => heavyData, expect: null, warnMs: 2000, failMs: 8000
+  },
+  {
+    id: 'perf-05', cat: 'perf', name: 'group_by + count', type: 'perf',
+    desc: 'Group 30,000 logs by severity, count each',
+    filter: '.logs | group_by(.level) | map({level: .[0].level, count: length})',
+    inputFn: () => heavyData, expect: null, warnMs: 500, failMs: 3000
+  },
+  {
+    id: 'perf-06', cat: 'perf', name: 'unique + sort dedup', type: 'perf',
+    desc: 'Collect all tags from 5,000 users, deduplicate and sort',
+    filter: '[.users[].tags[]] | unique | sort',
+    inputFn: () => heavyData, expect: null, warnMs: 300, failMs: 2000
+  },
+  {
+    id: 'perf-07', cat: 'perf', name: 'String interpolation', type: 'perf',
+    desc: 'Build a formatted string per active user',
+    filter: '.users[] | select(.isActive) | "User \\(.profile.name) -> \\(.profile.email)"',
+    inputFn: () => heavyData, expect: null, warnMs: 500, failMs: 3000
+  },
+  {
+    id: 'perf-08', cat: 'perf', name: 'if/elif/else mapping', type: 'perf',
+    desc: 'Map each order status to an action string (20,000 records)',
+    filter: '[.orders[] | {id, action: (if .status == "completed" then "Archive" elif .status == "pending" then "Fulfill" else "Investigate" end)}]',
+    inputFn: () => heavyData, expect: null, warnMs: 500, failMs: 3000
+  },
+  {
+    id: 'perf-09', cat: 'perf', name: 'Array slice + reverse', type: 'perf',
+    desc: 'Slice middle 1,000 logs and reverse',
+    filter: '.logs[10000:11000] | reverse',
+    inputFn: () => heavyData, expect: null, warnMs: 200, failMs: 1000
+  },
+  {
+    id: 'perf-10', cat: 'perf', name: 'reduce accumulation', type: 'perf',
+    desc: 'reduce over all log entries to build a severity tally map',
+    filter: 'reduce .logs[] as $l ({}; .[$l.level] = ((.[$l.level] // 0) + 1))',
+    inputFn: () => heavyData, expect: null, warnMs: 500, failMs: 3000
+  }
+];
+
+// ═══════════════════════════════════════════════════════
+// Heavy data (lazy-generated once)
+// ═══════════════════════════════════════════════════════
+let heavyData = null;
+
+function generateHeavyData() {
+  if (heavyData) return;
+  const data = { users: [], orders: [], logs: [] };
+  for (let i = 0; i < 5000; i++) {
+    data.users.push({
+      id: i, profile: { name: `User ${i}`, email: `user${i}@example.com` },
+      isActive: i % 3 !== 0, tags: ['customer', `cohort_${i % 10}`]
+    });
+  }
+  for (let i = 0; i < 20000; i++) {
+    data.orders.push({
+      id: `ord_${i}`, user_id: i % 5000,
+      amount: Math.round(Math.random() * 1000 * 100) / 100,
+      status: i % 7 === 0 ? 'failed' : (i % 5 === 0 ? 'pending' : 'completed'),
+      items: [{ id: 'item_1', qty: 1 }, { id: 'item_2', qty: i % 3 }]
+    });
+  }
+  for (let i = 0; i < 30000; i++) {
+    data.logs.push({
+      id: `log_${i}`,
+      level: i % 50 === 0 ? 'FATAL' : (i % 10 === 0 ? 'ERROR' : 'INFO'),
+      message: 'System event logged',
+      metadata: { timestamp: Date.now() - i * 1000, retry_count: i % 3 }
+    });
+  }
+  heavyData = JSON.stringify(data);
+}
+
+// ═══════════════════════════════════════════════════════
+// WASM
+// ═══════════════════════════════════════════════════════
+let run_jaq = null;
+let run_jaq_values = null;
+const cliOutputDecoder = new TextDecoder('utf-8');
+const JAQ_WASM_MODULE_URL = 'https://unpkg.com/jaq-wasm@0.1.1/jaq_wasm.js';
+
+async function loadWasm() {
+  const pill = document.getElementById('wasm-pill');
+  const txt  = document.getElementById('wasm-status-text');
+  try {
+    const wasm = await import(JAQ_WASM_MODULE_URL);
+    await wasm.default();
+    run_jaq = wasm.run_jaq;
+    run_jaq_values = wasm.run_jaq_values;
+    pill.className = 'wasm-pill ok';
+    txt.textContent = 'WASM Ready';
+    document.getElementById('run-btn').disabled = false;
+    document.getElementById('run-all-btn').disabled = false;
+    runPlayground();
+  } catch (err) {
+    pill.className = 'wasm-pill err';
+    txt.textContent = 'WASM Failed';
+    const banner = document.getElementById('error-banner');
+    banner.classList.add('visible');
+    document.getElementById('error-detail').textContent = err.message || String(err);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// Test runner helpers
+// ═══════════════════════════════════════════════════════
+function invokeJaq(filter, input) {
+  if (!run_jaq_values) throw new Error('WASM not loaded');
+  const raw = run_jaq_values(filter, input);
+  return JSON.parse(raw); // { ok: ... } | { error: "..." }
+}
+
+function deepEqual(a, b) {
+  if (a === b) {
+    return true;
+  }
+
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) {
+      return false;
+    }
+
+    return a.every((value, index) => deepEqual(value, b[index]));
+  }
+
+  if (a && b && typeof a === 'object' && typeof b === 'object') {
+    const aKeys = Object.keys(a).sort();
+    const bKeys = Object.keys(b).sort();
+
+    if (!deepEqual(aKeys, bKeys)) {
+      return false;
+    }
+
+    return aKeys.every((key) => deepEqual(a[key], b[key]));
+  }
+
+  return Number.isNaN(a) && Number.isNaN(b);
+}
+
+function normalizeOutputs(outputs) {
+  if (Array.isArray(outputs) && outputs.length === 1) {
+    return outputs[0];
+  }
+  return outputs;
+}
+
+function sortJsonValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(sortJsonValue);
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((sorted, key) => {
+        sorted[key] = sortJsonValue(value[key]);
+        return sorted;
+      }, {});
+  }
+
+  return value;
+}
+
+function formatJsonValue(value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  return JSON.stringify(sortJsonValue(value), null, 2);
+}
+
+function runTest(test) {
+  const start = performance.now();
+  try {
+    const inputStr = test.inputFn ? test.inputFn() : test.input;
+    const result   = invokeJaq(test.filter, inputStr);
+    const elapsed  = performance.now() - start;
+
+    if (test.expect === '__ERROR__') {
+      // We WANT an error
+      if (result.error !== undefined) {
+        return { status: 'pass', ms: elapsed, actual: undefined, errorMsg: result.error };
+      } else {
+        return { status: 'fail', ms: elapsed, actual: result.ok,
+          reason: `Expected an error result but got a successful output: ${JSON.stringify(result.ok)}` };
+      }
+    }
+
+    if (result.error !== undefined) {
+      return { status: 'fail', ms: elapsed, actual: undefined,
+        reason: `jaq returned an error: ${result.error}` };
+    }
+
+    if (test.type === 'perf') {
+      const warn = test.warnMs || 1000;
+      const fail = test.failMs || 5000;
+      if (elapsed > fail) {
+        return { status: 'fail', ms: elapsed, actual: result.ok,
+          reason: `Execution exceeded fail threshold: ${elapsed.toFixed(0)}ms > ${fail}ms` };
+      }
+      return { status: elapsed > warn ? 'warn' : 'pass', ms: elapsed, actual: result.ok };
+    }
+
+    // Correctness check
+    // For multi-output jq (sequence), jaq-wasm may return an array of outputs
+    const actual = normalizeOutputs(result.ok);
+    if (deepEqual(actual, test.expect)) {
+      return { status: 'pass', ms: elapsed, actual };
+    } else {
+      return { status: 'fail', ms: elapsed, actual,
+        reason: `Output mismatch.\n  Expected: ${JSON.stringify(test.expect)}\n  Actual:   ${JSON.stringify(actual)}` };
+    }
+  } catch (e) {
+    const elapsed = performance.now() - start;
+    return { status: 'error', ms: elapsed, actual: undefined,
+      reason: `JavaScript exception: ${e.message}` };
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// UI Rendering
+// ═══════════════════════════════════════════════════════
+const CATEGORIES = [
+  { id: 'wasm',    label: '🔌 WASM Module',      color: 'var(--purple)' },
+  { id: 'basic',   label: '🔧 Basic Filters',     color: 'var(--blue)' },
+  { id: 'types',   label: '📦 Types & Coercion',  color: 'var(--cyan)' },
+  { id: 'array',   label: '📋 Array Operations',  color: 'var(--green)' },
+  { id: 'object',  label: '🗂  Object Operations', color: 'var(--yellow)' },
+  { id: 'string',  label: '💬 String / Format',   color: 'var(--accent)' },
+  { id: 'math',    label: '🔢 Math',              color: 'var(--cyan)' },
+  { id: 'control', label: '🔀 Control Flow',      color: 'var(--purple)' },
+  { id: 'advanced',label: '🧩 Advanced',          color: 'var(--yellow)' },
+  { id: 'perf',    label: '⚡ Performance',        color: 'var(--red)' },
+];
+
+function chipHTML(status) {
+  const map = {
+    pending: ['chip-pending', 'PENDING'],
+    running: ['chip-running', 'RUNNING'],
+    pass:    ['chip-pass',    'PASS'],
+    fail:    ['chip-fail',    'FAIL'],
+    warn:    ['chip-skip',    'WARN'],
+    error:   ['chip-error',   'ERROR'],
+    skip:    ['chip-skip',    'SKIP'],
+  };
+  const [cls, lbl] = map[status] || map.pending;
+  return `<span class="status-chip ${cls}">${lbl}</span>`;
+}
+
+function iconFor(status) {
+  return { pass:'✓', fail:'✗', warn:'⚠', error:'!', pending:'·', running:'…', skip:'-' }[status] || '·';
+}
+
+function truncate(s, n=120) {
+  if (!s) return '';
+  const str = typeof s === 'string' ? s : JSON.stringify(s);
+  return str.length > n ? str.slice(0, n) + '…' : str;
+}
+
+function buildSuite() {
+  const body = document.getElementById('suite-body');
+  body.innerHTML = '';
+
+  CATEGORIES.forEach(cat => {
+    const tests = TESTS.filter(t => t.cat === cat.id);
+    if (!tests.length) return;
+
+    const catDiv = document.createElement('div');
+    catDiv.className = 'category';
+    catDiv.dataset.cat = cat.id;
+
+    const header = document.createElement('div');
+    header.className = 'cat-header';
+    header.innerHTML = `
+      <span class="cat-name" style="color:${cat.color}">${cat.label}</span>
+      <span class="cat-stats" id="cat-stats-${cat.id}">
+        <span style="color:var(--ink-3)">${tests.length} tests</span>
+      </span>
+      <span class="cat-chevron">▶</span>`;
+    header.addEventListener('click', () => {
+      header.classList.toggle('open');
+      catBody.classList.toggle('open');
+    });
+
+    const catBody = document.createElement('div');
+    catBody.className = 'cat-body';
+
+    tests.forEach(test => {
+      const row = document.createElement('div');
+      row.className = 'test-row';
+      row.dataset.cat = test.cat;
+      row.id = `row-${test.id}`;
+
+      const inputPreview = test.inputFn ? '(generated ~8MB)' : truncate(test.input, 80);
+      const expectPreview = test.expect === '__ERROR__'
+        ? '(expects error)'
+        : test.expect === null ? '(perf only)' : truncate(JSON.stringify(test.expect), 80);
+
+      row.innerHTML = `
+        <div class="test-main" id="main-${test.id}">
+          <span class="test-icon" id="icon-${test.id}" style="color:var(--ink-3)">${iconFor('pending')}</span>
+          <span class="test-name">
+            <strong>${escHtml(test.name)}</strong>
+            <span class="test-desc">${escHtml(test.desc)}</span>
+          </span>
+          <span class="test-time" id="time-${test.id}">—</span>
+          <span id="chip-${test.id}">${chipHTML('pending')}</span>
+        </div>
+        <div class="test-detail" id="detail-${test.id}">
+          <div class="detail-grid">
+            <div class="detail-block">
+              <span class="detail-label">Filter</span>
+              <div class="detail-code filter">${escHtml(test.filter)}</div>
+            </div>
+            <div class="detail-block">
+              <span class="detail-label">Input</span>
+              <div class="detail-code input-data">${escHtml(inputPreview)}</div>
+            </div>
+            <div class="detail-block">
+              <span class="detail-label">Expected</span>
+              <div class="detail-code expected" id="expected-${test.id}">${escHtml(expectPreview)}</div>
+            </div>
+            <div class="detail-block">
+              <span class="detail-label">Actual Output</span>
+              <div class="detail-code actual" id="actual-${test.id}">—</div>
+            </div>
+          </div>
+          <div class="failure-reason" id="failure-${test.id}" style="display:none;"></div>
+        </div>`;
+
+      row.querySelector('.test-main').addEventListener('click', () => {
+        const det = document.getElementById(`detail-${test.id}`);
+        det.classList.toggle('open');
+      });
+
+      catBody.appendChild(row);
+    });
+
+    catDiv.appendChild(header);
+    catDiv.appendChild(catBody);
+    body.appendChild(catDiv);
+  });
+}
+
+function escHtml(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+function updateTestUI(test, result) {
+  const { status, ms, actual, reason, errorMsg } = result;
+
+  // Icon
+  const iconEl = document.getElementById(`icon-${test.id}`);
+  const iconColor = { pass:'var(--green)', fail:'var(--red)', warn:'var(--yellow)', error:'var(--red)' }[status] || 'var(--ink-3)';
+  iconEl.style.color = iconColor;
+  iconEl.textContent = iconFor(status);
+
+  // Chip
+  document.getElementById(`chip-${test.id}`).innerHTML = chipHTML(status);
+
+  // Time
+  const timeEl = document.getElementById(`time-${test.id}`);
+  if (ms != null) {
+    timeEl.textContent = `${ms.toFixed(1)} ms`;
+    if (test.type === 'perf') {
+      const pct = Math.min(100, (ms / (test.failMs || 3000)) * 100);
+      const barColor = ms > (test.warnMs || 500) ? (ms > (test.failMs || 3000) ? 'var(--red)' : 'var(--yellow)') : 'var(--green)';
+      timeEl.innerHTML += `<div class="perf-indicator"><div class="perf-bar" style="width:${pct}%;background:${barColor};"></div></div>`;
+    }
+  }
+
+  // Actual
+  const actualEl = document.getElementById(`actual-${test.id}`);
+  if (actual !== undefined) {
+    actualEl.textContent = formatJsonValue(actual);
+  } else if (errorMsg !== undefined) {
+    actualEl.textContent = `(error) ${errorMsg}`;
+    actualEl.classList.add('error-msg');
+  } else {
+    actualEl.textContent = '—';
+  }
+
+  // Failure
+  const failEl = document.getElementById(`failure-${test.id}`);
+  if ((status === 'fail' || status === 'error' || status === 'warn') && reason) {
+    failEl.style.display = 'block';
+    failEl.innerHTML = `<strong>⚠ ${status === 'warn' ? 'Performance Warning' : 'Failure Reason'}</strong>${escHtml(reason)}`;
+    if (status === 'warn') failEl.style.background = 'var(--yellow-dim)';
+    // Auto-open detail drawer on failure
+    document.getElementById(`detail-${test.id}`).classList.add('open');
+    // Auto-open category
+    const catBody = document.getElementById(`row-${test.id}`)?.closest('.cat-body');
+    if (catBody && !catBody.classList.contains('open')) {
+      catBody.classList.add('open');
+      catBody.previousElementSibling?.classList.add('open');
+    }
+  } else {
+    failEl.style.display = 'none';
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// Stats
+// ═══════════════════════════════════════════════════════
+let statsTotal = 0, statsPass = 0, statsFail = 0, statsSkip = 0, statsTotalMs = 0;
+
+function resetStats(visibleTests) {
+  statsTotal = visibleTests.length; statsPass = statsFail = statsSkip = statsTotalMs = 0;
+  document.getElementById('stat-total').textContent = statsTotal;
+  document.getElementById('stat-pass').textContent = '0';
+  document.getElementById('stat-fail').textContent = '0';
+  document.getElementById('stat-skip').textContent = '0';
+  document.getElementById('stat-time').textContent = '0';
+}
+
+function updateStats(result) {
+  if (result.status === 'pass') statsPass++;
+  else if (result.status === 'warn') statsSkip++;
+  else statsFail++;
+  if (result.ms) statsTotalMs += result.ms;
+  document.getElementById('stat-pass').textContent = statsPass;
+  document.getElementById('stat-fail').textContent = statsFail;
+  document.getElementById('stat-skip').textContent = statsSkip;
+  document.getElementById('stat-time').textContent = statsTotalMs.toFixed(0);
+}
+
+function updateCatStats(catId) {
+  const tests = TESTS.filter(t => t.cat === catId);
+  let p=0,f=0,r=0;
+  tests.forEach(t => {
+    const chip = document.getElementById(`chip-${t.id}`)?.querySelector('.status-chip');
+    if (!chip) return;
+    if (chip.classList.contains('chip-pass')) p++;
+    else if (chip.classList.contains('chip-fail')||chip.classList.contains('chip-error')) f++;
+    else if (chip.classList.contains('chip-running')) r++;
+  });
+  const el = document.getElementById(`cat-stats-${catId}`);
+  if (!el) return;
+  el.innerHTML = `
+    ${p > 0 ? `<span style="color:var(--green)">${p} pass</span>` : ''}
+    ${f > 0 ? `<span style="color:var(--red)">${f} fail</span>` : ''}
+    ${p===0&&f===0 ? `<span style="color:var(--ink-3)">${tests.length} tests</span>` : ''}
+  `;
+}
+
+// ═══════════════════════════════════════════════════════
+// Run All
+// ═══════════════════════════════════════════════════════
+const yieldToMain = () => new Promise(r => setTimeout(r, 0));
+
+async function runAllTests(filter='all') {
+  if (!run_jaq_values) return;
+
+  const btn = document.getElementById('run-all-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Running…';
+
+  // Determine which tests to run
+  const toRun = filter === 'all' ? TESTS : TESTS.filter(t => t.cat === filter);
+
+  // Pre-generate heavy data if needed
+  const needsHeavy = toRun.some(t => t.type === 'perf');
+  if (needsHeavy && !heavyData) {
+    btn.innerHTML = '<span class="spinner"></span> Generating data…';
+    await yieldToMain();
+    generateHeavyData();
+  }
+
+  resetStats(toRun);
+
+  // Progress
+  const progressWrap = document.getElementById('progress-wrap');
+  const progressFill = document.getElementById('progress-fill');
+  const progressLabel = document.getElementById('progress-label');
+  progressWrap.classList.add('visible');
+
+  // Reset all visible rows to pending
+  toRun.forEach(t => {
+    document.getElementById(`icon-${t.id}`).style.color = 'var(--ink-3)';
+    document.getElementById(`icon-${t.id}`).textContent = iconFor('pending');
+    document.getElementById(`chip-${t.id}`).innerHTML = chipHTML('pending');
+    document.getElementById(`time-${t.id}`).textContent = '—';
+    document.getElementById(`failure-${t.id}`).style.display = 'none';
+    document.getElementById(`actual-${t.id}`).textContent = '—';
+  });
+
+  for (let i = 0; i < toRun.length; i++) {
+    const test = toRun[i];
+    // Mark running
+    document.getElementById(`chip-${test.id}`).innerHTML = chipHTML('running');
+    document.getElementById(`icon-${test.id}`).textContent = iconFor('running');
+    progressLabel.textContent = `[${i+1}/${toRun.length}] Running: ${test.name}`;
+    progressFill.style.width = `${((i) / toRun.length) * 100}%`;
+    await yieldToMain();
+
+    const result = runTest(test);
+    updateTestUI(test, result);
+    updateStats(result);
+    updateCatStats(test.cat);
+    await yieldToMain();
+  }
+
+  progressFill.style.width = '100%';
+  progressLabel.textContent = `✓ Done — ${statsPass}/${statsTotal} passed in ${statsTotalMs.toFixed(0)}ms`;
+
+  btn.disabled = false;
+  btn.innerHTML = statsFail > 0
+    ? `▶ Re-run (${statsFail} failed)`
+    : '▶ Run All Tests';
+}
+
+// ═══════════════════════════════════════════════════════
+// Playground
+// ═══════════════════════════════════════════════════════
+function runPlayground() {
+  if (!run_jaq) return;
+  const filter = document.getElementById('filter-input').value;
+  const input  = document.getElementById('json-input').value;
+  const out    = document.getElementById('output-block');
+  const stat   = document.getElementById('play-status');
+  const t0 = performance.now();
+  try {
+    const raw = run_jaq(filter, input);
+    const ms = (performance.now() - t0).toFixed(2);
+    out.className = 'output-block';
+    out.textContent = cliOutputDecoder.decode(raw);
+    stat.style.color = 'var(--green)';
+    stat.textContent = `${ms} ms`;
+  } catch(e) {
+    out.className = 'output-block error';
+    out.textContent = '// Runtime Exception\n' + e.message;
+    stat.style.color = 'var(--red)';
+    stat.textContent = 'Error';
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// Tab filtering
+// ═══════════════════════════════════════════════════════
+let activeFilter = 'all';
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeFilter = btn.dataset.filter;
+    applyFilter(activeFilter);
+  });
+});
+
+function applyFilter(filter) {
+  document.querySelectorAll('.category').forEach(catDiv => {
+    const catId = catDiv.dataset.cat;
+    catDiv.style.display = (filter === 'all' || filter === catId) ? '' : 'none';
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// Expand All
+// ═══════════════════════════════════════════════════════
+let expandedAll = false;
+document.getElementById('expand-all-btn').addEventListener('click', () => {
+  expandedAll = !expandedAll;
+  document.querySelectorAll('.cat-header').forEach(h => {
+    const body = h.nextElementSibling;
+    if (expandedAll) { h.classList.add('open'); body.classList.add('open'); }
+    else             { h.classList.remove('open'); body.classList.remove('open'); }
+  });
+  document.getElementById('expand-all-btn').textContent = expandedAll ? 'Collapse All' : 'Expand All';
+});
+
+// ═══════════════════════════════════════════════════════
+// Wire up events
+// ═══════════════════════════════════════════════════════
+document.getElementById('run-btn').addEventListener('click', runPlayground);
+document.getElementById('clear-btn').addEventListener('click', () => {
+  document.getElementById('filter-input').value = '.';
+  document.getElementById('json-input').value = 'null';
+  document.getElementById('output-block').textContent = 'Waiting for input…';
+  document.getElementById('output-block').className = 'output-block';
+  document.getElementById('play-status').textContent = '—';
+});
+document.getElementById('run-all-btn').addEventListener('click', () => runAllTests(activeFilter));
+
+// ═══════════════════════════════════════════════════════
+// Boot
+// ═══════════════════════════════════════════════════════
+document.getElementById('stat-total').textContent = TESTS.length;
+['stat-pass','stat-fail','stat-skip','stat-time'].forEach(id => {
+  document.getElementById(id).textContent = '0';
+});
+buildSuite();
+loadWasm();
+</script>
+</body>
+</html>
