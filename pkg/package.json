@@ -1,32 +1,52 @@
 {
   "name": "jaq-wasm",
+  "version": "0.1.1",
+  "description": "WebAssembly bindings for jaq with a JavaScript-friendly API",
   "type": "module",
-  "collaborators": [
-    "Mayank Kumar Poddar"
-  ],
-  "description": "Wasm wrapper for jaq",
-  "version": "0.1.0",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mynkpdr/jaq-wasm"
+    "url": "git+https://github.com/mynkpdr/jaq-wasm.git"
   },
-  "files": [
-    "jaq_wasm_bg.wasm",
-    "jaq_wasm.js",
-    "jaq_wasm.d.ts"
-  ],
-  "main": "jaq_wasm.js",
+  "bugs": {
+    "url": "https://github.com/mynkpdr/jaq-wasm/issues"
+  },
   "homepage": "https://github.com/mynkpdr/jaq-wasm#readme",
-  "types": "jaq_wasm.d.ts",
-  "sideEffects": [
-    "./snippets/*"
-  ],
+  "engines": {
+    "node": ">=18.18"
+  },
   "keywords": [
     "jaq",
     "jq",
     "wasm",
     "webassembly",
     "json"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "jaq_wasm.js",
+    "jaq_wasm.d.ts",
+    "jaq_wasm_bg.wasm",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "default": "./index.js"
+    },
+    "./jaq_wasm.js": "./jaq_wasm.js",
+    "./package.json": "./package.json"
+  },
+  "main": "./index.js",
+  "module": "./index.js",
+  "types": "./index.d.ts",
+  "sideEffects": [
+    "./snippets/*"
   ]
 }

@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/jaq-wasm.svg)](https://www.npmjs.com/package/jaq-wasm)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-`jaq-wasm` is the WebAssembly build of `jaq`, a jq-like JSON processor written in Rust. It allows you to process JSON data using jq filters directly in the browser or Node.js.
+`jaq-wasm` is the WebAssembly build of [`jaq`](https://github.com/01mf02/jaq), a jq-like JSON processor written in Rust. This package exposes a small JavaScript-first API for running jaq filters in browsers and in Node.js.
 
 ## Installation
 
@@ -11,156 +11,122 @@
 npm install jaq-wasm
 ```
 
-## Usage
+## API
 
-`jaq-wasm` provides two main functions:
+The package exposes two ergonomic helpers for most callers:
 
-- `run_jaq(filter, input)`: Returns raw CLI-style output as bytes
-- `run_jaq_values(filter, input)`: Returns structured JSON results
+- `run(filter, input)` returns CLI-style output as a string.
+- `runValues(filter, input)` returns the produced values as a JavaScript array.
 
-### Browser (ESM)
+If you already have raw JSON text, use the `runJson(...)` and `runJsonValues(...)` variants instead of pre-parsing it yourself. For byte-accurate CLI output, `runJsonBytes(...)` returns a `Uint8Array`.
 
-```html
-<!DOCTYPE html>
-<html>
-<head>
-  <title>jaq-wasm Example</title>
-</head>
-<body>
-  <script type="module">
-    import init, { run_jaq, run_jaq_values } from 'https://unpkg.com/jaq-wasm/jaq_wasm.js';
-
-    async function main() {
-      // Initialize the WebAssembly module
-      await init();
-
-      // Example 1: Simple object access
-      const data = { name: "Alice", age: 30, city: "New York" };
-      const filter = '.name';
-      const result = JSON.parse(run_jaq_values(filter, JSON.stringify(data)));
-      console.log(result.ok); // "Alice"
-
-      // Example 2: Array filtering
-      const users = [
-        { name: "Alice", active: true },
-        { name: "Bob", active: false },
-        { name: "Charlie", active: true }
-      ];
-      const activeUsers = JSON.parse(run_jaq_values('.[] | select(.active) | .name', JSON.stringify(users)));
-      console.log(activeUsers.ok); // ["Alice", "Charlie"]
-
-      // Example 3: Complex transformation
-      const products = [
-        { name: "Laptop", price: 1200, category: "electronics" },
-        { name: "Book", price: 20, category: "books" },
-        { name: "Phone", price: 800, category: "electronics" }
-      ];
-      const electronics = JSON.parse(run_jaq_values('.[] | select(.category == "electronics") | {name, price}', JSON.stringify(products)));
-      console.log(electronics.ok);
-      // [{name: "Laptop", price: 1200}, {name: "Phone", price: 800}]
-
-      // Example 4: Using raw output
-      const rawOutput = run_jaq('.[] | .name', JSON.stringify(users));
-      console.log(new TextDecoder().decode(rawOutput).trim());
-      // "Alice"
-      // "Bob"
-      // "Charlie"
-    }
-
-    main();
-  </script>
-</body>
-</html>
-```
-
-### Node.js
-
-```javascript
-import init, { run_jaq, run_jaq_values } from 'jaq-wasm';
-
-async function main() {
-  await init();
-
-  // Example: Process JSON file
-  const fs = await import('fs');
-  const data = JSON.parse(fs.readFileSync('data.json', 'utf8'));
-
-  // Extract specific fields
-  const result = JSON.parse(run_jaq_values('.users[] | {name, email}', JSON.stringify(data)));
-  if (result.error) {
-    console.error('Error:', result.error);
-  } else {
-    console.log('Processed data:', result.ok);
-  }
-
-  // Example: Transform data
-  const input = { items: [1, 2, 3, 4, 5] };
-  const doubled = JSON.parse(run_jaq_values('.items | map(. * 2)', JSON.stringify(input)));
-  console.log('Doubled:', doubled.ok); // [2, 4, 6, 8, 10]
-}
-
-main();
-```
-
-### CDN Usage
-
-You can also use jaq-wasm directly from a CDN without npm:
+## Browser
 
 ```html
 <script type="module">
-  import init, { run_jaq_values } from 'https://unpkg.com/jaq-wasm@latest/jaq_wasm.js';
+  import init, { run, runValues } from 'https://unpkg.com/jaq-wasm/index.js';
 
-  (async () => {
-    await init();
-    const result = JSON.parse(run_jaq_values('. + 1', '5'));
-    console.log(result.ok); // 6
-  })();
+  await init();
+
+  const names = runValues('.users[] | .name', {
+    users: [
+      { name: 'Ada' },
+      { name: 'Grace' }
+    ]
+  });
+
+  console.log(names); // ["Ada", "Grace"]
+  console.log(run('.users | length', { users: names }));
 </script>
 ```
 
-## API Reference
+## Node.js
 
-### `run_jaq(filter: string, input: string): Uint8Array`
+```js
+import init, { run, runValues } from 'jaq-wasm';
 
-Runs a jq filter and returns the raw output as bytes, matching the CLI behavior.
+await init();
 
-- `filter`: jq filter expression
-- `input`: JSON string to process
-- Returns: `Uint8Array` containing the output bytes
+const activeEmails = runValues(
+  '.users[] | select(.active) | .email',
+  {
+    users: [
+      { email: 'ada@example.com', active: true },
+      { email: 'grace@example.com', active: false }
+    ]
+  },
+);
 
-### `run_jaq_values(filter: string, input: string): string`
+console.log(activeEmails);
+console.log(run('.users | map(.email)', {
+  users: [
+    { email: 'ada@example.com' },
+    { email: 'grace@example.com' },
+  ],
+}));
+```
 
-Runs a jq filter and returns a structured JSON response.
+## JSON String Inputs
 
-- `filter`: jq filter expression
-- `input`: JSON string to process
-- Returns: JSON string with `{ok: result}` on success or `{error: message}` on failure
+```js
+import init, { runJson, runJsonValues, runJsonBytes } from 'jaq-wasm';
 
-## Supported jq Features
+await init();
 
-jaq-wasm supports most jq features including:
+const inputJson = '{"items":[1,2,3,4]}';
 
-- Object and array access (`.key`, `.[index]`)
-- Filtering (`select()`, `map()`)
-- Arithmetic operations
-- String manipulation
-- Array/object construction
-- Conditionals
-- And much more!
+console.log(runJsonValues('.items | map(. * 2)', inputJson)); // [2, 4, 6, 8]
+console.log(runJson('.items | length', inputJson)); // 4\n
+console.log(new TextDecoder().decode(runJsonBytes('.items[]', inputJson)));
+```
 
-For the full list of supported features, see the [jaq documentation](https://github.com/01mf02/jaq).
+## Function Reference
 
-## Contributing
+### `run(filter: string, input: unknown): string`
 
-Contributions are welcome! Please see the [main repository](https://github.com/01mf02/jaq) for jaq development.
+Serializes `input` as JSON, runs the filter, and returns newline-delimited CLI-style output.
 
-## License
+### `runValues<T = unknown>(filter: string, input: unknown): T[]`
 
-MIT
+Serializes `input` as JSON, runs the filter, and returns every produced value as a JavaScript array.
 
-## Contributing
+### `runJson(filter: string, inputJson: string): string`
 
-Contributions are welcome! Please see the [main repository](https://github.com/01mf02/jaq) for jaq development.
+Runs the filter against an existing JSON string and returns newline-delimited CLI-style output.
+
+### `runJsonValues<T = unknown>(filter: string, inputJson: string): T[]`
+
+Runs the filter against an existing JSON string and returns every produced value as a JavaScript array.
+
+### `runJsonBytes(filter: string, inputJson: string): Uint8Array`
+
+Runs the filter against an existing JSON string and returns raw output bytes.
+
+## Runtime Notes
+
+- Invalid filters throw JavaScript errors.
+- Invalid JSON input throws JavaScript errors.
+- The WebAssembly build does not allow filesystem-backed module imports.
+- Output values are converted to JSON-compatible JavaScript values before they are returned by `runValues(...)` and `runJsonValues(...)`.
+
+## Local Development
+
+```bash
+npm run build
+npm run smoke
+npm run test
+npm run check
+```
+
+The generated publishable package is written to [`pkg`](./pkg). The local test bench in [`site/index.html`](./site/index.html) loads that built artifact directly, so it stays aligned with what would actually be published to npm.
+
+## Publishing
+
+The GitHub release workflow publishes the contents of `pkg/` to npm. To verify the tarball locally before a release:
+
+```bash
+npm run pack
+```
 
 ## License
 

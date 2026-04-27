@@ -1,0 +1,11 @@
+*
+!.gitignore
+!LICENSE
+!README.md
+!index.d.ts
+!index.js
+!jaq_wasm.d.ts
+!jaq_wasm.js
+!jaq_wasm_bg.wasm
+!jaq_wasm_bg.wasm.d.ts
+!package.json

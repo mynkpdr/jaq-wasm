@@ -370,8 +370,8 @@
     <strong>❌ WebAssembly module failed to load</strong>
     <span class="detail" id="error-detail"></span>
     <div style="margin-top:8px;color:var(--ink-2);">
-      This page loads the published <code>jaq-wasm</code> package from npm.
-      If you are working offline, build the local package artifact and serve it from the same origin.
+      This page loads the local publishable package artifact from <code>../pkg</code>.
+      Run <code>npm run build</code> before serving the demo if the package has not been generated yet.
     </div>
   </div>
 
@@ -496,22 +496,22 @@ const TESTS = [
   // ── WASM Module Tests ──────────────────────────────────
   {
     id: 'wasm-01', cat: 'wasm', name: 'Module loads', type: 'wasm',
-    desc: 'run_jaq function is exported and callable',
+    desc: 'runJsonValues helper is exported and callable',
     filter: '.', input: '1', expect: 1
   },
   {
-    id: 'wasm-02', cat: 'wasm', name: 'Returns JSON envelope', type: 'wasm',
-    desc: 'Result is JSON with {ok} or {error} key',
+    id: 'wasm-02', cat: 'wasm', name: 'Returns parsed values', type: 'wasm',
+    desc: 'runJsonValues returns JavaScript values without envelope parsing',
     filter: '.', input: '"hello"', expect: 'hello'
   },
   {
-    id: 'wasm-03', cat: 'wasm', name: 'Invalid JSON input → error field', type: 'wasm',
-    desc: 'Broken input must produce result.error, not a JS exception',
+    id: 'wasm-03', cat: 'wasm', name: 'Invalid JSON input → error result', type: 'wasm',
+    desc: 'Broken input is captured as an error result by the test runner',
     filter: '.', input: '{broken:', expect: '__ERROR__'
   },
   {
-    id: 'wasm-04', cat: 'wasm', name: 'Invalid filter → error field', type: 'wasm',
-    desc: 'Malformed filter must produce result.error, not a JS exception',
+    id: 'wasm-04', cat: 'wasm', name: 'Invalid filter → error result', type: 'wasm',
+    desc: 'Malformed filter is captured as an error result by the test runner',
     filter: '.foo bar !!!', input: '{}', expect: '__ERROR__'
   },
   {
@@ -1172,10 +1172,9 @@ function generateHeavyData() {
 // ═══════════════════════════════════════════════════════
 // WASM
 // ═══════════════════════════════════════════════════════
-let run_jaq = null;
-let run_jaq_values = null;
-const cliOutputDecoder = new TextDecoder('utf-8');
-const JAQ_WASM_MODULE_URL = 'https://unpkg.com/jaq-wasm@0.1.1/jaq_wasm.js';
+let runJson = null;
+let runJsonValues = null;
+const JAQ_WASM_MODULE_URL = '../pkg/index.js';
 
 async function loadWasm() {
   const pill = document.getElementById('wasm-pill');
@@ -1183,8 +1182,8 @@ async function loadWasm() {
   try {
     const wasm = await import(JAQ_WASM_MODULE_URL);
     await wasm.default();
-    run_jaq = wasm.run_jaq;
-    run_jaq_values = wasm.run_jaq_values;
+    runJson = wasm.runJson;
+    runJsonValues = wasm.runJsonValues;
     pill.className = 'wasm-pill ok';
     txt.textContent = 'WASM Ready';
     document.getElementById('run-btn').disabled = false;
@@ -1203,9 +1202,13 @@ async function loadWasm() {
 // Test runner helpers
 // ═══════════════════════════════════════════════════════
 function invokeJaq(filter, input) {
-  if (!run_jaq_values) throw new Error('WASM not loaded');
-  const raw = run_jaq_values(filter, input);
-  return JSON.parse(raw); // { ok: ... } | { error: "..." }
+  if (!runJsonValues) throw new Error('WASM not loaded');
+
+  try {
+    return { ok: runJsonValues(filter, input) };
+  } catch (error) {
+    return { error: error.message || String(error) };
+  }
 }
 
 function deepEqual(a, b) {
@@ -1550,7 +1553,7 @@ function updateCatStats(catId) {
 const yieldToMain = () => new Promise(r => setTimeout(r, 0));
 
 async function runAllTests(filter='all') {
-  if (!run_jaq_values) return;
+  if (!runJsonValues) return;
 
   const btn = document.getElementById('run-all-btn');
   btn.disabled = true;
@@ -1614,17 +1617,17 @@ async function runAllTests(filter='all') {
 // Playground
 // ═══════════════════════════════════════════════════════
 function runPlayground() {
-  if (!run_jaq) return;
+  if (!runJson) return;
   const filter = document.getElementById('filter-input').value;
   const input  = document.getElementById('json-input').value;
   const out    = document.getElementById('output-block');
   const stat   = document.getElementById('play-status');
   const t0 = performance.now();
   try {
-    const raw = run_jaq(filter, input);
+    const stdout = runJson(filter, input);
     const ms = (performance.now() - t0).toFixed(2);
     out.className = 'output-block';
-    out.textContent = cliOutputDecoder.decode(raw);
+    out.textContent = stdout;
     stat.style.color = 'var(--green)';
     stat.textContent = `${ms} ms`;
   } catch(e) {

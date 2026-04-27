@@ -1,7 +1,7 @@
 [package]
 name = "jaq-wasm"
-description = "Wasm wrapper for jaq"
-version = "0.1.0"
+description = "WebAssembly bindings for jaq"
+version = "0.1.1"
 authors = ["Mayank Kumar Poddar"]
 categories = ["wasm"]
 license = "MIT"

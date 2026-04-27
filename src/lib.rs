@@ -12,104 +12,108 @@ use serde_json::{Map, Value};
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::wasm_bindgen;
 
-type Filter = jaq_core::Filter<data::JustLut<Val>>;
+type CompiledFilter = jaq_core::Filter<data::JustLut<Val>>;
 
-/// Run a jq-like filter against a single JSON value.
+/// Run a jq-like filter against a single JSON input and return CLI-style bytes.
 ///
-/// On success, the function returns the CLI stdout bytes for the produced values.
-/// On failure, it returns an error string.
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
-pub fn run_jaq(filter: &str, input: &str) -> Result<Vec<u8>, String> {
-    run_jaq_stdout_impl(filter, input)
+/// JavaScript callers typically use the higher-level package wrapper built on top
+/// of this lower-level wasm export.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = runJsonBytes))]
+pub fn run_json_bytes(filter_source: &str, input_json: &str) -> Result<Vec<u8>, String> {
+    let output_values = evaluate_filter(filter_source, input_json)?;
+    format_stdout_output(&output_values)
 }
 
-/// Run a jq-like filter and return a structured JSON envelope for JS callers.
-#[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
-pub fn run_jaq_values(filter: &str, input: &str) -> String {
-    match run_jaq_values_impl(filter, input) {
-        Ok(output) => serde_json::json!({"ok": output}).to_string(),
-        Err(error) => serde_json::json!({"error": error}).to_string(),
-    }
-}
-
-fn run_jaq_values_impl(filter: &str, input: &str) -> Result<Vec<Value>, String> {
-    let filter = compile_filter(filter)?;
-    let input = parse_input(input)?;
-    let ctx = Ctx::<data::JustLut<Val>>::new(&filter.lut, Vars::new([]));
-
-    let outputs = filter
-        .id
-        .run((ctx, input))
-        .map(unwrap_valr)
-        .map(|result| result.map_err(|error| error.to_string()))
+/// Run a jq-like filter against a single JSON input and return a JSON array.
+///
+/// The returned string is valid JSON representing every produced output value.
+#[cfg_attr(target_arch = "wasm32", wasm_bindgen(js_name = runJsonValuesJson))]
+pub fn run_json_values_json(filter_source: &str, input_json: &str) -> Result<String, String> {
+    let output_values = evaluate_filter(filter_source, input_json)?;
+    let json_values = output_values
+        .iter()
+        .map(jaq_value_to_json)
         .collect::<Result<Vec<_>, _>>()?;
 
-    outputs.iter().map(val_to_json_value).collect()
+    serde_json::to_string(&json_values)
+        .map_err(|error| format!("failed to serialize filter results: {error}"))
 }
 
-fn run_jaq_stdout_impl(filter: &str, input: &str) -> Result<Vec<u8>, String> {
-    let filter = compile_filter(filter)?;
-    let input = parse_input(input)?;
-    let ctx = Ctx::<data::JustLut<Val>>::new(&filter.lut, Vars::new([]));
-    let outputs = filter
+fn evaluate_filter(filter_source: &str, input_json: &str) -> Result<Vec<Val>, String> {
+    let compiled_filter = compile_filter(filter_source)?;
+    let input_value = parse_input_json(input_json)?;
+    let execution_context =
+        Ctx::<data::JustLut<Val>>::new(&compiled_filter.lut, Vars::new([]));
+
+    compiled_filter
         .id
-        .run((ctx, input))
+        .run((execution_context, input_value))
         .map(unwrap_valr)
         .map(|result| result.map_err(|error| error.to_string()))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect()
+}
 
-    let mut output = Vec::new();
-    let pp = jaq_json::write::Pp {
+fn format_stdout_output(output_values: &[Val]) -> Result<Vec<u8>, String> {
+    let mut stdout_bytes = Vec::new();
+    let pretty_printer = jaq_json::write::Pp {
         indent: Some("  ".to_owned()),
         sort_keys: false,
         styles: Default::default(),
         sep_space: true,
     };
 
-    for value in outputs {
-        jaq_json::write::write(&mut output, &pp, 0, &value)
+    for value in output_values {
+        jaq_json::write::write(&mut stdout_bytes, &pretty_printer, 0, value)
             .map_err(|error| format!("output write error: {error}"))?;
-        output.push(b'\n');
+        stdout_bytes.push(b'\n');
     }
 
-    Ok(output)
+    Ok(stdout_bytes)
 }
 
-fn parse_input(input: &str) -> Result<Val, String> {
-    serde_json::from_str(input).map_err(|error| format!("invalid JSON input: {error}"))
+fn parse_input_json(input_json: &str) -> Result<Val, String> {
+    serde_json::from_str(input_json).map_err(|error| format!("invalid JSON input: {error}"))
 }
 
-fn compile_filter(filter: &str) -> Result<Filter, String> {
+fn compile_filter(filter_source: &str) -> Result<CompiledFilter, String> {
     let arena = Arena::default();
-    let loader = Loader::new(defs());
-    let modules = loader
-        .load(&arena, File { code: filter, path: () })
+    let loader = Loader::new(built_in_defs());
+    let parsed_modules = loader
+        .load(
+            &arena,
+            File {
+                code: filter_source,
+                path: (),
+            },
+        )
         .map_err(format_load_errors)?;
 
-    load::import(&modules, |_| Err("filesystem access is disabled in wasm".into()))
+    load::import(&parsed_modules, |_| {
+        Err("filesystem access is disabled in the WebAssembly build".into())
+    })
         .map_err(format_load_errors)?;
 
     Compiler::default()
-        .with_funs(funs())
-        .compile(modules)
+        .with_funs(built_in_funs())
+        .compile(parsed_modules)
         .map_err(format_compile_errors)
 }
 
-fn defs() -> impl Iterator<Item = load::parse::Def<&'static str>> {
+fn built_in_defs() -> impl Iterator<Item = load::parse::Def<&'static str>> {
     jaq_core::defs().chain(jaq_std::defs()).chain(jaq_json::defs())
 }
 
-fn funs() -> impl Iterator<Item = jaq_core::native::Fun<data::JustLut<Val>>> {
+fn built_in_funs() -> impl Iterator<Item = jaq_core::native::Fun<data::JustLut<Val>>> {
     jaq_core::funs::<data::JustLut<Val>>()
         .chain(jaq_std::funs::<data::JustLut<Val>>().filter(|(name, _, _)| *name != "env"))
         .chain(jaq_json::funs())
         .chain(jaq_fmts::funs::<data::JustLut<Val>>())
-        .chain([jaq_core::native::run(("env", jaq_core::native::v(0), |_cv| {
-            jaq_core::native::bome(Ok(env_value()))
+        .chain([jaq_core::native::run(("env", jaq_core::native::v(0), |_context| {
+            jaq_core::native::bome(Ok(empty_env_value()))
         }))])
 }
 
-fn env_value() -> Val {
+fn empty_env_value() -> Val {
     Val::obj(Default::default())
 }
 
@@ -171,7 +175,7 @@ fn format_compile_errors(errs: compile::Errors<&str, ()>) -> String {
     }
 }
 
-fn val_to_json_value(value: &Val) -> Result<Value, String> {
+fn jaq_value_to_json(value: &Val) -> Result<Value, String> {
     match value {
         Val::Null => Ok(Value::Null),
         Val::Bool(value) => Ok(Value::Bool(*value)),
@@ -185,15 +189,15 @@ fn val_to_json_value(value: &Val) -> Result<Value, String> {
             .map_err(|_| "output contains non-UTF-8 string data".to_string()),
         Val::Arr(values) => values
             .iter()
-            .map(val_to_json_value)
+            .map(jaq_value_to_json)
             .collect::<Result<Vec<_>, _>>()
             .map(Value::Array),
         Val::Obj(entries) => {
             let mut object = Map::new();
 
             for (key, value) in entries.iter() {
-                let key = val_to_json_key(key)?;
-                let value = val_to_json_value(value)?;
+                let key = jaq_object_key_to_json(key)?;
+                let value = jaq_value_to_json(value)?;
                 if object.insert(key.clone(), value).is_some() {
                     return Err(format!("duplicate object key after JSON conversion: {key}"));
                 }
@@ -204,8 +208,8 @@ fn val_to_json_value(value: &Val) -> Result<Value, String> {
     }
 }
 
-fn val_to_json_key(value: &Val) -> Result<String, String> {
-    match val_to_json_value(value)? {
+fn jaq_object_key_to_json(value: &Val) -> Result<String, String> {
+    match jaq_value_to_json(value)? {
         Value::String(string) => Ok(string),
         other => serde_json::to_string(&other)
             .map_err(|error| format!("failed to stringify object key: {error}")),

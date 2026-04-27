@@ -8,55 +8,28 @@ permissions:
   contents: read
 
 jobs:
-  rust-and-wasm:
+  verify:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Install wasm-pack
-        run: cargo install wasm-pack --locked
-
-      - name: Test Rust workspace
-        run: wasm-pack test --node
-
-      - name: Build wasm web package
-        run: wasm-pack build --target web --release
-
-      - name: Build wasm node package
-        run: wasm-pack build --target nodejs --release --out-dir target/wasm-node
-
-      - name: Package dry run
-        run: npm run publish:dry-run
-
-  node-tooling:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
       - name: Install wasm-pack
         run: cargo install wasm-pack --locked
 
       - name: Install npm dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build dummy package for TS
-        run: npm run build:web
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Typecheck
-        run: npm run typecheck
+      - name: Verify package
+        run: npm run check

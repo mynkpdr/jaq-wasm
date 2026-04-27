@@ -6,25 +6,27 @@ Thanks for contributing to `jaq-wasm`.
 
 1. Create a branch for your change.
 2. Make the code change.
-3. Run the checks:
+3. Regenerate the package output and run the checks:
 
 ```bash
-cargo test
+npm run build
+npm run smoke
+npm run test
 npm run lint
 npm run typecheck
-wasm-pack build --target web --release
-wasm-pack build --target nodejs --release
+npm run pack
 ```
 
-4. Update `pkg/` if the wasm artifact changes.
+4. Commit both the source changes and the refreshed `pkg/` output when the publishable package changes.
 5. Open a pull request.
 
 ## Standards
 
-- Keep the CLI semantics as the source of truth.
+- Keep the JavaScript package entrypoint in `package-template/` aligned with the wasm exports in `src/lib.rs`.
+- Keep the npm package surface small and intentional.
 - Avoid changing the public JavaScript API without a clear reason.
 - Prefer small, reviewable patches.
-- Keep generated files out of `target/` and `node_modules/`.
+- Do not edit files under `pkg/` by hand; regenerate them through `npm run build`.
 
 ## Release Notes
 

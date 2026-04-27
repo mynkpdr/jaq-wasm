@@ -1,8 +1,8 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
-export const run_jaq: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-export const run_jaq_values: (a: number, b: number, c: number, d: number) => [number, number];
+export const runJsonBytes: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const runJsonValuesJson: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const __wbindgen_externrefs: WebAssembly.Table;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;

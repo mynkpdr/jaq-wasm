@@ -1,20 +1,20 @@
 /* @ts-self-types="./jaq_wasm.d.ts" */
 
 /**
- * Run a jq-like filter against a single JSON value.
+ * Run a jq-like filter against a single JSON input and return CLI-style bytes.
  *
- * On success, the function returns the CLI stdout bytes for the produced values.
- * On failure, it returns an error string.
- * @param {string} filter
- * @param {string} input
+ * JavaScript callers typically use the higher-level package wrapper built on top
+ * of this lower-level wasm export.
+ * @param {string} filter_source
+ * @param {string} input_json
  * @returns {Uint8Array}
  */
-export function run_jaq(filter, input) {
-    const ptr0 = passStringToWasm0(filter, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+export function runJsonBytes(filter_source, input_json) {
+    const ptr0 = passStringToWasm0(filter_source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(input, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const ptr1 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.run_jaq(ptr0, len0, ptr1, len1);
+    const ret = wasm.runJsonBytes(ptr0, len0, ptr1, len1);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
@@ -24,25 +24,33 @@ export function run_jaq(filter, input) {
 }
 
 /**
- * Run a jq-like filter and return a structured JSON envelope for JS callers.
- * @param {string} filter
- * @param {string} input
+ * Run a jq-like filter against a single JSON input and return a JSON array.
+ *
+ * The returned string is valid JSON representing every produced output value.
+ * @param {string} filter_source
+ * @param {string} input_json
  * @returns {string}
  */
-export function run_jaq_values(filter, input) {
-    let deferred3_0;
-    let deferred3_1;
+export function runJsonValuesJson(filter_source, input_json) {
+    let deferred4_0;
+    let deferred4_1;
     try {
-        const ptr0 = passStringToWasm0(filter, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr0 = passStringToWasm0(filter_source, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(input, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const ptr1 = passStringToWasm0(input_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.run_jaq_values(ptr0, len0, ptr1, len1);
-        deferred3_0 = ret[0];
-        deferred3_1 = ret[1];
-        return getStringFromWasm0(ret[0], ret[1]);
+        const ret = wasm.runJsonValuesJson(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
     } finally {
-        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
     }
 }
 function __wbg_get_imports() {

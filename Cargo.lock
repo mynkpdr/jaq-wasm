@@ -216,7 +216,7 @@ dependencies = [
 
 [[package]]
 name = "jaq-fmts"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "aho-corasick",
  "base64",
@@ -269,7 +269,7 @@ dependencies = [
 
 [[package]]
 name = "jaq-wasm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "jaq-core",
  "jaq-fmts",

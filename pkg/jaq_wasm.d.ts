@@ -2,24 +2,26 @@
 /* eslint-disable */
 
 /**
- * Run a jq-like filter against a single JSON value.
+ * Run a jq-like filter against a single JSON input and return CLI-style bytes.
  *
- * On success, the function returns the CLI stdout bytes for the produced values.
- * On failure, it returns an error string.
+ * JavaScript callers typically use the higher-level package wrapper built on top
+ * of this lower-level wasm export.
  */
-export function run_jaq(filter: string, input: string): Uint8Array;
+export function runJsonBytes(filter_source: string, input_json: string): Uint8Array;
 
 /**
- * Run a jq-like filter and return a structured JSON envelope for JS callers.
+ * Run a jq-like filter against a single JSON input and return a JSON array.
+ *
+ * The returned string is valid JSON representing every produced output value.
  */
-export function run_jaq_values(filter: string, input: string): string;
+export function runJsonValuesJson(filter_source: string, input_json: string): string;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly run_jaq: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly run_jaq_values: (a: number, b: number, c: number, d: number) => [number, number];
+    readonly runJsonBytes: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly runJsonValuesJson: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
